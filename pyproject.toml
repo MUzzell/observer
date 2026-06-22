@@ -1,0 +1,43 @@
+[project]
+name = "observer"
+version = "0.1.0"
+description = "Detect airplanes and helicopters taking off in remote camera footage, and render results on a live dashboard."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sse-starlette>=2.1",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "sqlmodel>=0.0.16",
+    "pydantic-settings>=2.2",
+    "watchdog>=4.0",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "ultralytics>=8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+# Raspberry Pi only — installed separately on the device alongside the Hailo runtime.
+hailo = [
+    # "hailort",  # provided by the HailoRT system package on the Pi
+]
+
+[project.scripts]
+observer = "observer.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["observer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
