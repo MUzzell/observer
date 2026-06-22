@@ -11,11 +11,16 @@ import numpy as np
 @dataclass
 class Detection:
     xyxy: tuple[float, float, float, float]
-    class_id: int
+    label: str
     confidence: float
 
 
 class Detector(Protocol):
     def detect(self, frame: np.ndarray) -> list[Detection]:
-        """Run object detection on a BGR frame and return detections."""
+        """Run detection on a BGR frame and return aircraft candidate detections."""
+        ...
+
+    def classify_type(self, frame: np.ndarray) -> tuple[str | None, float]:
+        """Best-effort airplane-vs-helicopter guess for a frame. ``(None, 0.0)``
+        if the backend can't tell."""
         ...

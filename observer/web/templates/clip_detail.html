@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ clip.filename }} · Observer{% endblock %}
+{% block content %}
+<section class="detail">
+  <a href="/" class="back">← back</a>
+  <h2>
+    {% if clip.human_label %}
+      <span class="badge badge-label-{{ clip.human_label }}" title="manual label">🧑 {{ clip.human_label }}</span>
+    {% endif %}
+    {% if clip.num_frames and clip.num_frames > 0 %}
+      {% if clip.has_aircraft %}
+        <span class="badge badge-aircraft">aircraft detected</span>
+        {% if clip.aircraft_type %}<span class="badge badge-type">{{ clip.aircraft_type }}</span>{% endif %}
+        <span class="conf">{{ "%.0f"|format(clip.confidence * 100) }}% confidence</span>
+      {% else %}
+        <span class="badge badge-none">no aircraft detected</span>
+      {% endif %}
+    {% endif %}
+  </h2>
+
+  <div class="detail-grid">
+    <div class="player">
+      <video controls preload="metadata"
+             {% if clip.evidence_path %}poster="/media/{{ clip.evidence_path }}"{% endif %}>
+        {% if clip.source_path %}
+          <source src="/source/{{ clip.id }}" type="video/mp4" />
+        {% else %}
+          <source src="/media/processed/{{ clip.filename }}" type="video/mp4" />
+        {% endif %}
+      </video>
+      {% if clip.evidence_path %}
+        <p class="caption">Evidence frame (best detection at {{ "%.1f"|format(clip.best_time_s) }}s):</p>
+        <img class="evidence" src="/media/{{ clip.evidence_path }}" alt="evidence" />
+      {% endif %}
+    </div>
+    <div class="info">
+      <table>
+        <tr><th>Clip</th><td>{{ clip.filename }}</td></tr>
+        {% if clip.human_label %}<tr><th>Manual label</th><td>{{ clip.human_label }}</td></tr>{% endif %}
+        {% if clip.num_frames and clip.num_frames > 0 %}
+        <tr><th>Detector verdict</th><td>{{ "aircraft" if clip.has_aircraft else "no aircraft" }}</td></tr>
+        {% endif %}
+        {% if clip.aircraft_type %}<tr><th>Type (guess)</th><td>{{ clip.aircraft_type }}</td></tr>{% endif %}
+        <tr><th>Peak confidence</th><td>{{ "%.1f"|format(clip.confidence * 100) }}%</td></tr>
+        <tr><th>Frames hit</th><td>{{ clip.num_hits }} / {{ clip.num_frames }}</td></tr>
+        <tr><th>Duration</th><td>{{ "%.1f"|format(clip.duration_s or 0) }}s</td></tr>
+        <tr><th>Received</th><td>{{ clip.received_at.strftime("%Y-%m-%d %H:%M:%S") }}</td></tr>
+        {% if clip.error %}<tr><th>Error</th><td>{{ clip.error }}</td></tr>{% endif %}
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

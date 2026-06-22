@@ -1,83 +1,70 @@
 # Observer
 
-Detect **airplanes and helicopters taking off** in footage from a remote camera,
-and render the results on a live web dashboard.
+Answer one question per clip from a remote camera: **is there an aircraft in it?**
 
-Clips (2–60s, color, daytime, no audio) are dropped into a watched folder. Each
-clip is processed to find moving aircraft, decide whether the motion is a
-takeoff, and classify airplane vs. helicopter from the trajectory. Detections are
-shown on a dashboard with live processing status.
+Clips (a few seconds, color, daytime, no audio) are dropped into a watched
+folder. Each clip is scanned for aircraft and the verdict — aircraft present or
+not, with an evidence frame — is shown on a live dashboard.
 
 ## How it works
 
 ```
-camera ──sync──> data/incoming/ ──watcher──> queue ──> processor ──> SQLite + media
+camera ──sync──> data/incoming/ ──watcher──> queue ──> processor ──> SQLite + evidence
                                                           │
-                          motion (MOG2) → tracking (centroid) → detector (YOLO)
-                          → trajectory classifier (takeoff? airplane/helicopter?)
+                              sample frames ─► YOLO-World detector (open-vocab,
+                              prompt "aircraft", full-frame @1280) ─► per-clip
+                              decision (persistence + peak confidence)
                                                           │
                                           event bus ──SSE──> live dashboard
 ```
 
-- **Motion**: a fixed daytime camera has a near-static background, so MOG2
-  background subtraction cheaply isolates moving objects.
-- **Tracking**: a nearest-centroid tracker stitches per-frame blobs into
-  trajectories (robust to small, fast-moving aircraft).
-- **Detection**: a pretrained YOLO confirms aircraft and supplies a class hint.
-- **Trajectory** (`observer/pipeline/trajectory.py`): sustained upward motion ⇒
-  *takeoff*; a steep, low-horizontal-speed climb (with possible hover) ⇒
-  *helicopter*; a fast, shallow climb ⇒ *airplane*.
+The aircraft in this footage are small, distant helicopters near the treeline.
+Stock COCO YOLO can't see them (and has no helicopter class), and small
+open-vocab models score at the noise floor. What works — verified on real
+clips — is **YOLO-World-X**, prompted with the single word **`"aircraft"`**, run
+**full-frame at imgsz=1280**: ~0.66–0.86 confidence on helicopters, while
+bird-only clips stay below threshold. No training or labelling required.
 
-## Detector backends
-
-Inference sits behind a `Detector` protocol (`observer/pipeline/detector/`):
-
-- `ultralytics` (default) — portable CPU/GPU YOLOv8.
-- `hailo` — optional, runs a precompiled `.hef` on a Raspberry Pi + Hailo
-  accelerator. Select via `OBSERVER_DETECTOR_BACKEND=hailo`.
+A clip is flagged as containing an aircraft when it is detected on enough frames
+(persistence rejects a lone false positive on a bird) **or** a single detection
+is very strong (a brief but unambiguous pass). See
+`observer/pipeline/aggregate.py`.
 
 ## Setup
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
 ```
+
+First run downloads the model weights (`yolov8x-worldv2.pt`, ~350 MB) once.
 
 ## Run
 
 ```bash
-# generate sample clips (if you have no real footage yet)
-python scripts/make_sample.py --out data/incoming
+# live: watch a folder, process clips as they arrive, review on the dashboard
+observer serve                       # http://localhost:8000
+#   ...then drop clips into data/incoming/
 
-# start the dashboard + ingestion worker
-observer serve            # http://localhost:8000
+# one-off: print the verdict for a single clip
+observer process path/to/clip.mp4
 
-# or process a single clip from the CLI
-observer process data/incoming/sample_helicopter.mp4
+# backfill: process an existing directory of clips (resumable, parallel)
+observer batch path/to/clips --recursive
 ```
 
-Drop a clip into `data/incoming/` and watch it appear, process (with live
-progress), and render as a detected event you can play back.
+Drop a clip into `data/incoming/` and watch it appear, process (live progress),
+and render as "aircraft" (with an evidence frame) or "no aircraft".
 
-## Processing a large archive
+## Tuning
 
-Bulk-process an existing directory of clips in parallel. Originals are read in
-place (not moved); results land in the same database/media the dashboard reads,
-so you can `observer serve` alongside or after the run to review.
+All knobs live in `observer/config.py`, overridable with `OBSERVER_*` env vars:
 
-```bash
-# fast first pass — trajectory-only, no torch needed, all CPU cores
-observer batch /path/to/clips --recursive
-
-# refine with the real detector once you've eyeballed the first pass
-observer batch /path/to/clips --recursive --backend ultralytics
-```
-
-- `--backend none` (default) skips object detection entirely — fastest, and the
-  takeoff/type decision is trajectory-based anyway. `ultralytics` adds the YOLO
-  aircraft-confidence signal; `hailo` uses the RPi accelerator.
-- The run is **resumable**: clips already completed are skipped on re-run (pass
-  `--reprocess` to force). Use `--limit N` to trial a subset, `--workers N` to
-  cap parallelism.
+| Symptom | Knob |
+|---|---|
+| Aircraft clips being missed | lower `present_conf` / `min_hit_frames`, raise `detect_sample_fps` |
+| Birds/clutter falsely flagged | raise `present_conf` / `min_hit_frames` / `strong_conf` |
+| Detector too slow | lower `detect_sample_fps` or `detect_imgsz` (costs recall) |
+| Different target wording | `aircraft_prompt` (e.g. add `"drone"`) |
 
 ## Tests
 
@@ -85,8 +72,10 @@ observer batch /path/to/clips --recursive --backend ultralytics
 pytest
 ```
 
-## Configuration
+## Notes
 
-All thresholds live in `observer/config.py` and can be overridden with
-`OBSERVER_`-prefixed environment variables (e.g. `OBSERVER_SAMPLE_FPS=10`,
-`OBSERVER_DETECTOR_BACKEND=hailo`).
+- **Type hint** (airplane vs helicopter) is a best-effort secondary signal and
+  currently unreliable; the yes/no verdict is the supported output.
+- **Hailo / RPi**: the open-vocab detector's text encoder isn't Hailo-friendly,
+  so the accelerator isn't used for this model. At ~10 clips/day on a fixed
+  camera, CPU is comfortably fast enough.

@@ -1,8 +1,10 @@
 """Central configuration.
 
-All tunable thresholds for ingestion, the processing pipeline, and the trajectory
-classifier live here so they can be adjusted without touching pipeline code (and
-overridden via environment variables prefixed with ``OBSERVER_``).
+The pipeline answers one question per clip: **is there an aircraft in it?**
+Detection uses an open-vocabulary detector (YOLO-World) prompted with the word
+"aircraft", run full-frame at high resolution — the combination verified to
+detect the small, distant helicopters in this footage where stock COCO models
+score at the noise floor. All knobs are overridable via ``OBSERVER_*`` env vars.
 """
 
 from __future__ import annotations
@@ -10,7 +12,6 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repository root: <repo>/observer/config.py -> parents[1] == <repo>
@@ -34,51 +35,32 @@ class Settings(BaseSettings):
     video_extensions: tuple[str, ...] = (".mp4", ".mov", ".mkv", ".avi", ".m4v")
 
     # --- Detector backend -------------------------------------------------
-    # "ultralytics" (portable CPU/GPU default) or "hailo" (RPi accelerator).
-    detector_backend: str = "ultralytics"
-    yolo_weights: str = "yolov8n.pt"
-    hailo_hef_path: Path = REPO_ROOT / "models" / "yolov8n.hef"
-    # COCO class ids. "airplane" confirms aircraft; "bird" lets the detector
-    # actively reject the many birds that otherwise look like distant aircraft.
-    airplane_class_id: int = 4
-    bird_class_id: int = 14
-    detect_conf: float = 0.25
-    # If a track's region reads as a bird above this confidence (and beats the
-    # airplane score), it is discarded rather than emitted as a takeoff.
-    bird_reject_conf: float = 0.35
-    # Upscale small/distant object crops to at least this long-edge size before
-    # running the detector, so tiny aircraft are still recognizable.
-    detect_crop_min_size: int = 320
+    # "yoloworld" (open-vocab, default) or "none" (no-op, for tests).
+    detector_backend: str = "yoloworld"
+    yoloworld_weights: str = "yolov8x-worldv2.pt"
+    # Prompt used for the yes/no decision. A single clean class word works far
+    # better than a competing list (verified on real footage).
+    aircraft_prompt: tuple[str, ...] = ("aircraft",)
+    # Secondary prompts used only to guess type on the best frame (nice-to-have).
+    type_prompts: tuple[str, ...] = ("helicopter", "airplane")
+    enable_type_hint: bool = True
+    detect_imgsz: int = 1280
+    # Low floor: collect all candidate detections; thresholds below decide.
+    detect_conf: float = 0.10
 
     # --- Frame sampling ---------------------------------------------------
-    sample_fps: float = 8.0
-    max_frame_width: int = 960  # downscale wide frames before processing
+    # Frames per second to sample for detection. Speed is a non-issue (~10
+    # clips/day), so sample densely enough to catch brief passes.
+    detect_sample_fps: float = 3.0
 
-    # --- Motion (MOG2) ----------------------------------------------------
-    mog2_history: int = 200
-    mog2_var_threshold: float = 25.0
-    mog2_warmup_frames: int = 5  # prime the background model before trusting it
-    min_blob_area_frac: float = 0.0002  # of frame area; reject tiny noise
-    max_blob_area_frac: float = 0.5     # reject whole-frame lighting changes
-
-    # --- Tracking ---------------------------------------------------------
-    min_track_frames: int = 5  # tracks shorter than this are ignored
-    # Gating distance for matching a blob to a track, as a fraction of the frame
-    # diagonal — generous enough to follow fast aircraft between sampled frames.
-    track_match_distance_frac: float = 0.12
-    track_max_age_frames: int = 6  # drop a track unseen for this many frames
-
-    # --- Trajectory / takeoff classification ------------------------------
-    # Fractions are of frame height/width unless noted.
-    takeoff_min_rise_frac: float = 0.12      # net upward motion to count as ascending
-    takeoff_min_displacement_frac: float = 0.10
-    # Straightness = net_displacement / path_length. Aircraft fly near-straight
-    # paths (~1.0); erratic birds score much lower. Key filter against birds.
-    min_straightness: float = 0.80
-    # Climb angle (degrees from horizontal) separating airplane vs helicopter ascent.
-    helicopter_min_climb_angle_deg: float = 55.0
-    airplane_max_climb_angle_deg: float = 35.0
-    hover_speed_frac: float = 0.01  # per-frame centroid speed below this = hovering
+    # --- Per-clip decision ------------------------------------------------
+    # A frame "hits" when its best aircraft confidence reaches present_conf.
+    present_conf: float = 0.30
+    # Aircraft present if it hits on this many frames (persistence rejects the
+    # occasional one-frame false positive on a bird/treeline) ...
+    min_hit_frames: int = 3
+    # ... OR a single very strong detection (covers very brief but clear passes).
+    strong_conf: float = 0.55
 
     # --- Web --------------------------------------------------------------
     host: str = "0.0.0.0"

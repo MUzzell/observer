@@ -36,3 +36,6 @@ venv/
 *.a
 *.lib
 *.out
+
+# External sample clips (symlinks to media)
+samples/

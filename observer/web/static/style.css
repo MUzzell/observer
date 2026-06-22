@@ -56,10 +56,17 @@ main { padding: 1.2rem; }
 
 .badge { font-size: .7rem; padding: .15rem .45rem; border-radius: 999px;
   text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
-.badge-airplane { background: #1d3a5f; color: #8fc1ff; }
-.badge-helicopter { background: #3a2d1d; color: #f0c486; }
-.badge-unknown { background: #333; color: #bbb; }
-.badge-takeoff { background: #1d3f2c; color: #7be0a6; }
+.badge-aircraft { background: #1d3f2c; color: #7be0a6; }
+.badge-type { background: #1d3a5f; color: #8fc1ff; }
+.badge-none { background: #333; color: #999; }
+/* Manual (human) labels — outlined to distinguish from detector badges. */
+.badge-label-aircraft { background: transparent; border: 1px solid #7be0a6; color: #7be0a6; }
+.badge-label-none { background: transparent; border: 1px solid #888; color: #aaa; }
+.badge-label-unreadable { background: transparent; border: 1px solid #e0a23c; color: #e0a23c; }
+.fname-row { padding: 0 .65rem .55rem; font-size: .72rem; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.caption { color: var(--muted); font-size: .8rem; margin: .8rem 0 .3rem; }
+.evidence { width: 100%; border-radius: 8px; }
 
 .side-col { background: var(--panel); border-radius: 10px; padding: 1rem; height: fit-content; }
 .activity, .videos { list-style: none; margin: 0 0 1.2rem; padding: 0; font-size: .82rem; }

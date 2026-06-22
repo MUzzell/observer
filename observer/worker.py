@@ -1,15 +1,14 @@
-"""Background worker: ingest -> process -> persist -> publish.
+"""Background worker: ingest -> detect aircraft -> persist verdict -> publish.
 
-Runs inside the FastAPI process. The watchdog watcher (in its own threads) hands
-ready clips to an asyncio queue; a consumer coroutine processes them one at a
-time, offloading the CPU-bound pipeline to a thread-pool executor so the event
-loop (and SSE streaming) stays responsive.
+Runs inside the FastAPI process. The watchdog watcher (own threads) hands ready
+clips to an asyncio queue; a consumer coroutine processes them one at a time,
+offloading the CPU-bound detector to a thread-pool executor so the event loop
+(and SSE streaming) stays responsive.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -18,9 +17,9 @@ from pathlib import Path
 from observer.config import Settings, get_settings
 from observer.ingest.watcher import IngestWatcher
 from observer.pipeline.detector import build_detector
-from observer.pipeline.processor import ProcessingResult, process_video
+from observer.pipeline.processor import ClipResult, process_video
 from observer.storage import files
-from observer.storage.db import Event, Video, VideoStatus, get_session, init_db
+from observer.storage.db import Video, VideoStatus, get_session, init_db
 from observer.web.events_bus import EventBus
 
 log = logging.getLogger("observer.worker")
@@ -53,7 +52,6 @@ class WorkerService:
             self._consumer_task.cancel()
 
     def _on_ready(self, path: Path) -> None:
-        # Called from the watcher's settle thread.
         if self._loop:
             self._loop.call_soon_threadsafe(self._queue.put_nowait, path)
 
@@ -62,13 +60,12 @@ class WorkerService:
             path = await self._queue.get()
             try:
                 await self._process_one(path)
-            except Exception:  # keep the worker alive on a bad clip
+            except Exception:
                 log.exception("processing failed for %s", path)
             finally:
                 self._queue.task_done()
 
     async def _process_one(self, path: Path) -> None:
-        # Register the video and move it out of incoming/.
         with get_session() as session:
             video = Video(filename=path.name, status=VideoStatus.processing)
             session.add(video)
@@ -93,10 +90,14 @@ class WorkerService:
             )
 
         try:
-            result: ProcessingResult = await self._loop.run_in_executor(
+            result: ClipResult = await self._loop.run_in_executor(
                 None,
                 lambda: process_video(
-                    working_path, self._settings, self._detector, on_progress
+                    working_path,
+                    self._settings,
+                    self._detector,
+                    on_progress,
+                    media_key=files.media_key(working_path),
                 ),
             )
         except Exception as exc:
@@ -106,42 +107,24 @@ class WorkerService:
             )
             return
 
-        await self._persist_result(video_id, path.name, working_path, result)
+        await self._persist(video_id, path.name, working_path, result)
 
-    async def _persist_result(
-        self, video_id: int, filename: str, working_path: Path, result: ProcessingResult
+    async def _persist(
+        self, video_id: int, filename: str, working_path: Path, result: ClipResult
     ) -> None:
         with get_session() as session:
             video = session.get(Video, video_id)
-            for evt in result.events:
-                row = Event(
-                    video_id=video_id,
-                    type=evt.classification.type,
-                    is_takeoff=evt.classification.is_takeoff,
-                    confidence=evt.classification.confidence,
-                    start_time_s=evt.start_time_s,
-                    end_time_s=evt.end_time_s,
-                    thumb_path=files.relative_media(evt.thumb_path),
-                    clip_path=files.relative_media(evt.clip_path),
-                    annotated_path=files.relative_media(evt.annotated_path),
-                    trajectory_json=json.dumps(evt.classification.metrics),
-                )
-                session.add(row)
-                session.commit()
-                session.refresh(row)
-                await self._bus.publish(
-                    {
-                        "type": "event_detected",
-                        "video_id": video_id,
-                        "event_id": row.id,
-                        "aircraft": row.type.value,
-                        "confidence": row.confidence,
-                    }
-                )
             if video:
                 video.status = VideoStatus.done
                 video.progress = 1.0
                 video.duration_s = result.duration_s
+                video.has_aircraft = result.has_aircraft
+                video.confidence = result.confidence
+                video.num_hits = result.num_hits
+                video.num_frames = result.num_frames
+                video.aircraft_type = result.aircraft_type
+                video.best_time_s = result.best_time_s
+                video.evidence_path = files.relative_media(result.evidence_path)
                 video.processed_at = datetime.now(timezone.utc)
                 session.add(video)
                 session.commit()
@@ -152,7 +135,9 @@ class WorkerService:
                 "type": "done",
                 "video_id": video_id,
                 "filename": filename,
-                "event_count": len(result.events),
+                "has_aircraft": result.has_aircraft,
+                "aircraft_type": result.aircraft_type,
+                "confidence": round(result.confidence, 3),
             }
         )
 

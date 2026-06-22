@@ -3,25 +3,23 @@
 <section class="layout">
   <div class="main-col">
     <div class="controls">
-      <form hx-get="/events" hx-target="#event-grid" hx-trigger="change, submit"
-            hx-swap="innerHTML">
-        <label>Aircraft
-          <select name="aircraft">
-            <option value="all">All</option>
-            <option value="airplane">Airplane</option>
-            <option value="helicopter">Helicopter</option>
+      <form hx-get="/clips" hx-target="#clip-grid" hx-trigger="change" hx-swap="innerHTML">
+        <label>Show
+          <select name="show">
+            <option value="labelled_aircraft" selected>Labelled: aircraft</option>
+            <option value="labelled_none">Labelled: none</option>
+            <option value="labelled">Labelled: any</option>
+            <option value="aircraft">Detected: aircraft</option>
+            <option value="none">Detected: none</option>
+            <option value="all">All clips</option>
           </select>
-        </label>
-        <label class="check">
-          <input type="checkbox" name="takeoff_only" value="true" checked />
-          Takeoffs only
         </label>
       </form>
     </div>
 
-    <h2>Detected events</h2>
-    <div id="event-grid">
-      {% include "_event_grid.html" %}
+    <h2>Clips</h2>
+    <div id="clip-grid">
+      {% include "_clip_grid.html" %}
     </div>
   </div>
 
@@ -31,7 +29,7 @@
 
     <h3>Recent clips</h3>
     <ul id="videos" class="videos">
-      {% for v in videos %}
+      {% for v in recent %}
       <li data-video-id="{{ v.id }}">
         <span class="fname">{{ v.filename }}</span>
         <span class="status status-{{ v.status.value }}">{{ v.status.value }}</span>
@@ -42,6 +40,4 @@
 </section>
 {% endblock %}
 
-{% block scripts %}
-<script src="/static/app.js"></script>
-{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}

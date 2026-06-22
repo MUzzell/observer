@@ -8,13 +8,12 @@
     if (!activity) return;
     const li = document.createElement("li");
     li.className = "act " + (cls || "");
-    const time = new Date().toLocaleTimeString();
-    li.innerHTML = `<span class="t">${time}</span> ${msg}`;
+    li.innerHTML = `<span class="t">${new Date().toLocaleTimeString()}</span> ${msg}`;
     activity.prepend(li);
     while (activity.children.length > 40) activity.lastChild.remove();
   }
 
-  function setVideoStatus(id, status, extra) {
+  function setStatus(id, status, extra) {
     if (!videos) return;
     let li = videos.querySelector(`[data-video-id="${id}"]`);
     if (!li) {
@@ -28,51 +27,37 @@
     badge.className = "status status-" + status;
   }
 
+  function refreshGrid() {
+    const form = document.querySelector(".controls form");
+    const show = form ? form.querySelector("[name=show]").value : "aircraft";
+    if (window.htmx) {
+      htmx.ajax("GET", "/clips", { target: "#clip-grid", swap: "innerHTML",
+        values: { show } });
+    }
+  }
+
   const es = new EventSource("/stream");
-  es.addEventListener("open", () => {
-    conn.textContent = "● live";
-    conn.className = "conn live";
-  });
-  es.addEventListener("error", () => {
-    conn.textContent = "○ reconnecting";
-    conn.className = "conn down";
-  });
+  es.addEventListener("open", () => { conn.textContent = "● live"; conn.className = "conn live"; });
+  es.addEventListener("error", () => { conn.textContent = "○ reconnecting"; conn.className = "conn down"; });
 
   es.addEventListener("video_received", (e) => {
     const d = JSON.parse(e.data);
     log(`received <b>${d.filename}</b>`, "recv");
-    setVideoStatus(d.video_id, "processing");
+    setStatus(d.video_id, "processing");
   });
   es.addEventListener("progress", (e) => {
     const d = JSON.parse(e.data);
-    setVideoStatus(d.video_id, "processing", ` ${Math.round(d.progress * 100)}%`);
-  });
-  es.addEventListener("event_detected", (e) => {
-    const d = JSON.parse(e.data);
-    log(`detected <b>${d.aircraft}</b> takeoff (${Math.round(d.confidence * 100)}%) ` +
-        `· <a href="/event/${d.event_id}">view</a>`, "detect");
+    setStatus(d.video_id, "processing", ` ${Math.round(d.progress * 100)}%`);
   });
   es.addEventListener("done", (e) => {
     const d = JSON.parse(e.data);
-    log(`finished <b>${d.filename}</b> — ${d.event_count} event(s)`, "done");
-    setVideoStatus(d.video_id, "done");
-    // Refresh the event grid to include any new detections.
-    if (window.htmx) {
-      const grid = document.querySelector("#event-grid form, .controls form");
-      htmx.ajax("GET", "/events", { target: "#event-grid", swap: "innerHTML",
-        values: collectFilters() });
+    if (d.has_aircraft) {
+      const t = d.aircraft_type ? ` (${d.aircraft_type})` : "";
+      log(`✈ <b>aircraft</b>${t} in ${d.filename} — ${Math.round(d.confidence * 100)}%`, "detect");
+    } else {
+      log(`no aircraft in ${d.filename}`, "done");
     }
+    setStatus(d.video_id, "done");
+    refreshGrid();
   });
-  es.addEventListener("error_event", () => {});
-  es.addEventListener("error", () => {});
-
-  function collectFilters() {
-    const form = document.querySelector(".controls form");
-    if (!form) return {};
-    const fd = new FormData(form);
-    const out = {};
-    for (const [k, v] of fd.entries()) out[k] = v;
-    if (!fd.has("takeoff_only")) out["takeoff_only"] = "false";
-    return out;
-  }
 })();

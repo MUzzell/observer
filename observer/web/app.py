@@ -1,4 +1,4 @@
-"""FastAPI application: dashboard, event views, media, and the live SSE stream."""
+"""FastAPI application: clip dashboard, clip detail, media, and live SSE stream."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
 from observer.config import get_settings
-from observer.storage.db import Event, Video, VideoStatus, get_session, init_db
+from observer.storage.db import Video, get_session, init_db
 from observer.web.events_bus import EventBus
 from observer.worker import WorkerService
 
@@ -41,64 +41,72 @@ app = FastAPI(title="Observer", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-def _query_events(aircraft: str | None, takeoff_only: bool) -> list[Event]:
+def _query_clips(show: str) -> list[Video]:
     with get_session() as session:
-        stmt = select(Event).order_by(Event.created_at.desc())
-        if takeoff_only:
-            stmt = stmt.where(Event.is_takeoff == True)  # noqa: E712
-        if aircraft and aircraft != "all":
-            stmt = stmt.where(Event.type == aircraft)
+        stmt = select(Video).order_by(Video.received_at.desc())
+        if show == "aircraft":
+            stmt = stmt.where(Video.has_aircraft == True)  # noqa: E712
+        elif show == "none":
+            stmt = stmt.where(Video.has_aircraft == False)  # noqa: E712
+        elif show == "labelled_aircraft":
+            stmt = stmt.where(Video.human_label == "aircraft")
+        elif show == "labelled_none":
+            stmt = stmt.where(Video.human_label == "none")
+        elif show == "labelled":
+            stmt = stmt.where(Video.human_label.is_not(None))
         return list(session.exec(stmt).all())
 
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
-    events = _query_events(None, takeoff_only=True)
+    clips = _query_clips("labelled_aircraft")
     with get_session() as session:
-        videos = list(
+        recent = list(
             session.exec(select(Video).order_by(Video.received_at.desc()).limit(15)).all()
         )
     return templates.TemplateResponse(
-        request, "index.html", {"events": events, "videos": videos}
+        request, "index.html", {"clips": clips, "recent": recent}
     )
 
 
-@app.get("/events", response_class=HTMLResponse)
-def events_partial(
-    request: Request,
-    aircraft: str = Query("all"),
-    takeoff_only: bool = Query(True),
-):
-    events = _query_events(aircraft, takeoff_only)
+@app.get("/clips", response_class=HTMLResponse)
+def clips_partial(request: Request, show: str = Query("aircraft")):
     return templates.TemplateResponse(
-        request, "_event_grid.html", {"events": events}
+        request, "_clip_grid.html", {"clips": _query_clips(show)}
     )
 
 
-@app.get("/event/{event_id}", response_class=HTMLResponse)
-def event_detail(request: Request, event_id: int):
+@app.get("/clip/{clip_id}", response_class=HTMLResponse)
+def clip_detail(request: Request, clip_id: int):
     with get_session() as session:
-        event = session.get(Event, event_id)
-        if event is None:
+        clip = session.get(Video, clip_id)
+        if clip is None:
             return Response(status_code=404)
-        video = session.get(Video, event.video_id)
-        metrics = json.loads(event.trajectory_json) if event.trajectory_json else {}
-    return templates.TemplateResponse(
-        request,
-        "event_detail.html",
-        {"event": event, "video": video, "metrics": metrics},
-    )
+    return templates.TemplateResponse(request, "clip_detail.html", {"clip": clip})
 
 
 @app.get("/media/{path:path}")
 def media(path: str):
     target = (settings.data_dir / path).resolve()
-    # Guard against path traversal outside the data dir.
     if not str(target).startswith(str(settings.data_dir.resolve())):
         return Response(status_code=403)
     if not target.is_file():
         return Response(status_code=404)
     return FileResponse(target)
+
+
+@app.get("/source/{clip_id}")
+def source(clip_id: int):
+    """Serve an imported clip from its original location (only paths recorded in
+    the DB are servable)."""
+    with get_session() as session:
+        clip = session.get(Video, clip_id)
+    if clip is None or not clip.source_path:
+        return Response(status_code=404)
+    p = Path(clip.source_path)
+    if not p.is_file():
+        return Response(status_code=404)
+    return FileResponse(p)
 
 
 @app.get("/stream")

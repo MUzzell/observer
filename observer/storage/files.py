@@ -1,9 +1,8 @@
 """Media file lifecycle helpers.
 
-Clips move through ``incoming/`` -> ``processing/`` -> ``processed/`` so the
-watcher never re-picks a file that is mid-process, and so a crash leaves a clip
-in ``processing/`` where it can be requeued. Derived artifacts (event clips,
-thumbnails, annotated previews) live in their own directories keyed by event.
+Clips move ``incoming/`` -> ``processing/`` -> ``processed/`` so the watcher
+never re-picks a file mid-process and a crash leaves the clip recoverable. The
+evidence image (best annotated frame) is keyed per clip.
 """
 
 from __future__ import annotations
@@ -18,11 +17,8 @@ settings = get_settings()
 
 
 def media_key(path: Path) -> str:
-    """A filesystem-safe, collision-resistant key for a source clip.
-
-    Combines the stem with a short hash of the absolute path so clips that share
-    a basename across different subfolders don't overwrite each other's artifacts.
-    """
+    """A filesystem-safe, collision-resistant key for a source clip (stem + short
+    hash of the absolute path, so duplicate basenames don't clash)."""
     digest = hashlib.md5(str(path.resolve()).encode()).hexdigest()[:8]
     return f"{path.stem}_{digest}"
 
@@ -39,20 +35,17 @@ def move_to_processed(path: Path) -> Path:
     return dest
 
 
-def event_clip_path(key: str, event_index: int) -> Path:
-    return settings.clips_dir / f"{key}_evt{event_index}.mp4"
+def evidence_path(key: str) -> Path:
+    return settings.thumbs_dir / f"{key}_evidence.jpg"
 
 
-def event_thumb_path(key: str, event_index: int) -> Path:
-    return settings.thumbs_dir / f"{key}_evt{event_index}.jpg"
-
-
-def event_annotated_path(key: str, event_index: int) -> Path:
-    return settings.thumbs_dir / f"{key}_evt{event_index}_annotated.jpg"
+def label_thumb_path(key: str) -> Path:
+    """Thumbnail for a manually-labelled clip (no detector evidence image)."""
+    return settings.thumbs_dir / f"{key}_label.jpg"
 
 
 def relative_media(path: Path | str | None) -> str | None:
-    """Return a path relative to the data dir for serving over ``/media``."""
+    """Path relative to the data dir, for serving over ``/media``."""
     if path is None:
         return None
     return str(Path(path).relative_to(settings.data_dir))
