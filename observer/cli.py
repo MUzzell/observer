@@ -272,6 +272,13 @@ def _import_labels(args: argparse.Namespace) -> None:
     print("View with:  observer serve   →   http://localhost:8000")
 
 
+def _eval(args: argparse.Namespace) -> None:
+    from observer.evaluate import evaluate
+
+    evaluate(Path(args.dir), recursive=args.recursive, sweep=args.sweep,
+             use_cache=not args.no_cache)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="observer")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -307,6 +314,15 @@ def main() -> None:
     imp.add_argument("--recursive", action="store_true", help="search subfolders for clips")
     imp.add_argument("--no-thumbs", action="store_true", help="skip thumbnail extraction")
     imp.set_defaults(func=_import_labels)
+
+    ev = sub.add_parser("eval", help="score the detector against imported human labels")
+    ev.add_argument("--dir", default=DEFAULT_CLIP_DIR,
+                    help="directory holding the clips (if source paths are unset)")
+    ev.add_argument("--recursive", action="store_true", help="search subfolders for clips")
+    ev.add_argument("--sweep", action="store_true",
+                    help="search present_conf/min_hit_frames for the best thresholds")
+    ev.add_argument("--no-cache", action="store_true", help="ignore cached per-frame scores")
+    ev.set_defaults(func=_eval)
 
     args = parser.parse_args()
     args.func(args)

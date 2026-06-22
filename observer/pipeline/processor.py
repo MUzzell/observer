@@ -1,12 +1,13 @@
-"""Process one clip: sample frames, detect aircraft, decide presence, save evidence.
+"""Process one clip: scan frames for aircraft, decide presence, save evidence.
 
 Kept free of database/web concerns: returns a :class:`ClipResult` and reports
-progress via an optional callback. The worker persists rows and publishes updates.
+progress via an optional callback. The per-frame scan is factored out as
+:func:`scan_clip` so the evaluator can reuse it to sweep decision thresholds.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -23,6 +24,23 @@ ProgressCb = Callable[[float], None]
 
 
 @dataclass
+class BestDetection:
+    confidence: float
+    frame: np.ndarray
+    box: tuple
+    label: str
+    t_seconds: float
+
+
+@dataclass
+class Scan:
+    confidences: list[float] = field(default_factory=list)  # per-frame top conf
+    best: Optional[BestDetection] = None
+    duration_s: float = 0.0
+    num_frames: int = 0
+
+
+@dataclass
 class ClipResult:
     duration_s: float
     has_aircraft: bool
@@ -33,6 +51,36 @@ class ClipResult:
     type_confidence: float = 0.0
     evidence_path: Optional[Path] = None
     best_time_s: float = 0.0
+
+
+def scan_clip(
+    path: Path,
+    settings: Settings,
+    detector: Detector,
+    on_progress: Optional[ProgressCb] = None,
+) -> Scan:
+    """Run the detector over sampled frames and return per-frame confidences plus
+    the single best detection (for the evidence image). No decision is made here."""
+    info = decode.probe(path)
+    total = max(1, int(info.duration_s * settings.detect_sample_fps))
+    scan = Scan(duration_s=info.duration_s)
+
+    # max_width=0 -> no downscale; the detector wants full native resolution.
+    for sf in decode.iter_frames(path, settings.detect_sample_fps, max_width=0):
+        scan.num_frames += 1
+        dets = detector.detect(sf.image)
+        if dets:
+            top = max(dets, key=lambda d: d.confidence)
+            scan.confidences.append(top.confidence)
+            if scan.best is None or top.confidence > scan.best.confidence:
+                scan.best = BestDetection(
+                    top.confidence, sf.image.copy(), top.xyxy, top.label, sf.t_seconds
+                )
+        if on_progress:
+            on_progress(min(0.95, scan.num_frames / total))
+    if on_progress:
+        on_progress(1.0)
+    return scan
 
 
 def _draw_box(frame: np.ndarray, box: tuple, label: str) -> np.ndarray:
@@ -54,56 +102,27 @@ def process_video(
     media_key: Optional[str] = None,
 ) -> ClipResult:
     key = media_key or path.stem
-    info = decode.probe(path)
-    total = max(1, int(info.duration_s * settings.detect_sample_fps))
+    scan = scan_clip(path, settings, detector, on_progress)
+    decision = decide(scan.confidences, settings)
 
-    frame_confidences: list[float] = []
-    # Track the single best detection across the clip for the evidence image.
-    best_conf = 0.0
-    best_frame: Optional[np.ndarray] = None
-    best_box: Optional[tuple] = None
-    best_label = ""
-    best_time = 0.0
-    num_frames = 0
-
-    # max_width=0 -> no downscale; the detector wants full native resolution.
-    for sf in decode.iter_frames(path, settings.detect_sample_fps, max_width=0):
-        num_frames += 1
-        dets = detector.detect(sf.image)
-        if dets:
-            top = max(dets, key=lambda d: d.confidence)
-            frame_confidences.append(top.confidence)
-            if top.confidence > best_conf:
-                best_conf = top.confidence
-                best_frame = sf.image.copy()
-                best_box = top.xyxy
-                best_label = top.label
-                best_time = sf.t_seconds
-        if on_progress:
-            on_progress(min(0.95, num_frames / total))
-
-    decision = decide(frame_confidences, settings)
     result = ClipResult(
-        duration_s=info.duration_s,
+        duration_s=scan.duration_s,
         has_aircraft=decision.has_aircraft,
         confidence=decision.confidence,
         num_hits=decision.num_hits,
-        num_frames=num_frames,
-        best_time_s=best_time,
+        num_frames=scan.num_frames,
+        best_time_s=scan.best.t_seconds if scan.best else 0.0,
     )
 
-    if decision.has_aircraft and best_frame is not None and best_box is not None:
-        # Optional airplane-vs-helicopter hint from the best frame.
+    if decision.has_aircraft and scan.best is not None:
         if settings.enable_type_hint:
-            atype, tconf = detector.classify_type(best_frame)
-            result.aircraft_type = atype
-            result.type_confidence = tconf
-        label = result.aircraft_type or best_label
-        annotated = _draw_box(best_frame, best_box, f"{label} {best_conf:.2f}")
+            result.aircraft_type, result.type_confidence = detector.classify_type(
+                scan.best.frame
+            )
+        label = result.aircraft_type or scan.best.label
+        annotated = _draw_box(scan.best.frame, scan.best.box, f"{label} {scan.best.confidence:.2f}")
         evidence = files.evidence_path(key)
         cv2.imwrite(str(evidence), annotated)
         result.evidence_path = evidence
 
-    if on_progress:
-        on_progress(1.0)
     return result

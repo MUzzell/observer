@@ -52,6 +52,25 @@ observer process path/to/clip.mp4
 observer batch path/to/clips --recursive
 ```
 
+## Ground-truth labelling & evaluation
+
+Build a labelled set by hand, then measure and tune the detector against it:
+
+```bash
+# 1. label clips by hand (needs the GUI build of OpenCV; see the script header)
+python tools/label_clips.py                 # A=aircraft D=none -> labels.csv
+
+# 2. import labels into the DB + dashboard (with thumbnails)
+observer import-labels labels.csv
+
+# 3. score the detector against your labels, and tune thresholds
+observer eval --sweep
+```
+
+`eval` reports precision/recall/F1 against your labels, lists the mismatched
+clips, and (with `--sweep`) recommends `present_conf` / `min_hit_frames`. Per-clip
+scores are cached, so re-running is instant.
+
 Drop a clip into `data/incoming/` and watch it appear, process (live progress),
 and render as "aircraft" (with an evidence frame) or "no aircraft".
 
