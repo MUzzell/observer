@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Event {{ event.id }} · Observer{% endblock %}
+{% block content %}
+<section class="detail">
+  <a href="/" class="back">← back</a>
+  <h2>
+    <span class="badge badge-{{ event.type.value }}">{{ event.type.value }}</span>
+    {% if event.is_takeoff %}<span class="badge badge-takeoff">takeoff</span>{% endif %}
+    <span class="conf">{{ "%.0f"|format(event.confidence * 100) }}% confidence</span>
+  </h2>
+
+  <div class="detail-grid">
+    <div class="player">
+      {% if event.clip_path %}
+        <video controls preload="metadata"
+               {% if event.annotated_path %}poster="/media/{{ event.annotated_path }}"{% endif %}>
+          <source src="/media/{{ event.clip_path }}" type="video/mp4" />
+        </video>
+      {% elif event.annotated_path %}
+        <img src="/media/{{ event.annotated_path }}" alt="event {{ event.id }}" />
+      {% endif %}
+    </div>
+    <div class="info">
+      <table>
+        <tr><th>Source clip</th><td>{{ video.filename if video else "—" }}</td></tr>
+        <tr><th>Window</th><td>{{ "%.1f"|format(event.start_time_s) }}s – {{ "%.1f"|format(event.end_time_s) }}s</td></tr>
+        <tr><th>Detected</th><td>{{ event.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td></tr>
+      </table>
+      <h3>Trajectory metrics</h3>
+      <table class="metrics">
+        {% for k, v in metrics.items() %}
+        <tr><th>{{ k }}</th><td>{{ v }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% if not events %}
+  <p class="empty">No events yet. Drop a clip into <code>data/incoming/</code>.</p>
+{% else %}
+<div class="grid">
+  {% for e in events %}
+  <a class="card" href="/event/{{ e.id }}">
+    <div class="thumb">
+      {% if e.annotated_path %}
+        <img src="/media/{{ e.annotated_path }}" alt="event {{ e.id }}" loading="lazy" />
+      {% elif e.thumb_path %}
+        <img src="/media/{{ e.thumb_path }}" alt="event {{ e.id }}" loading="lazy" />
+      {% else %}
+        <div class="noimg">no preview</div>
+      {% endif %}
+    </div>
+    <div class="meta">
+      <span class="badge badge-{{ e.type.value }}">{{ e.type.value }}</span>
+      {% if e.is_takeoff %}<span class="badge badge-takeoff">takeoff</span>{% endif %}
+      <span class="conf">{{ "%.0f"|format(e.confidence * 100) }}%</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}

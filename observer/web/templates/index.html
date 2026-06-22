@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="layout">
+  <div class="main-col">
+    <div class="controls">
+      <form hx-get="/events" hx-target="#event-grid" hx-trigger="change, submit"
+            hx-swap="innerHTML">
+        <label>Aircraft
+          <select name="aircraft">
+            <option value="all">All</option>
+            <option value="airplane">Airplane</option>
+            <option value="helicopter">Helicopter</option>
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="takeoff_only" value="true" checked />
+          Takeoffs only
+        </label>
+      </form>
+    </div>
+
+    <h2>Detected events</h2>
+    <div id="event-grid">
+      {% include "_event_grid.html" %}
+    </div>
+  </div>
+
+  <aside class="side-col">
+    <h2>Live activity</h2>
+    <ul id="activity" class="activity"></ul>
+
+    <h3>Recent clips</h3>
+    <ul id="videos" class="videos">
+      {% for v in videos %}
+      <li data-video-id="{{ v.id }}">
+        <span class="fname">{{ v.filename }}</span>
+        <span class="status status-{{ v.status.value }}">{{ v.status.value }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </aside>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/app.js"></script>
+{% endblock %}

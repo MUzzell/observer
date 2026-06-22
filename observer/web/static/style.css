@@ -1,0 +1,92 @@
+:root {
+  --bg: #0f1419;
+  --panel: #1a2129;
+  --panel2: #222c36;
+  --text: #e6edf3;
+  --muted: #93a1ad;
+  --accent: #4ea1ff;
+  --green: #36c275;
+  --amber: #e0a23c;
+  --red: #e2574c;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+  display: flex; align-items: center; gap: .8rem;
+  padding: .7rem 1.2rem; background: var(--panel);
+  border-bottom: 1px solid #2b3742;
+}
+.brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+.tagline { color: var(--muted); font-size: .85rem; }
+.conn { margin-left: auto; font-size: .8rem; color: var(--muted); }
+.conn.live { color: var(--green); }
+.conn.down { color: var(--amber); }
+
+main { padding: 1.2rem; }
+.layout { display: grid; grid-template-columns: 1fr 320px; gap: 1.4rem; }
+.main-col h2, .side-col h2 { font-size: 1rem; margin: .2rem 0 .8rem; }
+
+.controls form { display: flex; gap: 1.2rem; align-items: center;
+  background: var(--panel); padding: .7rem 1rem; border-radius: 8px; }
+.controls label { font-size: .85rem; color: var(--muted); display: flex;
+  gap: .4rem; align-items: center; }
+.controls select { background: var(--panel2); color: var(--text);
+  border: 1px solid #33414d; border-radius: 6px; padding: .3rem .5rem; }
+.controls .check { flex-direction: row; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 1rem; margin-top: 1rem; }
+.card { background: var(--panel); border: 1px solid #2b3742; border-radius: 10px;
+  overflow: hidden; transition: transform .08s, border-color .08s; }
+.card:hover { transform: translateY(-2px); border-color: var(--accent); text-decoration: none; }
+.thumb { aspect-ratio: 16/9; background: #0a0e12; display: flex;
+  align-items: center; justify-content: center; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.noimg { color: var(--muted); font-size: .8rem; }
+.meta { display: flex; align-items: center; gap: .4rem; padding: .55rem .65rem; }
+.conf { margin-left: auto; color: var(--muted); font-size: .85rem; }
+
+.badge { font-size: .7rem; padding: .15rem .45rem; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+.badge-airplane { background: #1d3a5f; color: #8fc1ff; }
+.badge-helicopter { background: #3a2d1d; color: #f0c486; }
+.badge-unknown { background: #333; color: #bbb; }
+.badge-takeoff { background: #1d3f2c; color: #7be0a6; }
+
+.side-col { background: var(--panel); border-radius: 10px; padding: 1rem; height: fit-content; }
+.activity, .videos { list-style: none; margin: 0 0 1.2rem; padding: 0; font-size: .82rem; }
+.activity li { padding: .35rem 0; border-bottom: 1px solid #232f39; }
+.activity .t { color: var(--muted); margin-right: .4rem; font-variant-numeric: tabular-nums; }
+.act.detect { color: var(--green); }
+.act.recv { color: var(--accent); }
+.videos li { display: flex; justify-content: space-between; gap: .5rem;
+  padding: .3rem 0; border-bottom: 1px solid #232f39; }
+.fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { font-size: .72rem; color: var(--muted); }
+.status-processing { color: var(--amber); }
+.status-done { color: var(--green); }
+.status-error { color: var(--red); }
+.empty { color: var(--muted); }
+
+.detail { max-width: 1000px; margin: 0 auto; }
+.back { display: inline-block; margin-bottom: .8rem; }
+.detail h2 { display: flex; align-items: center; gap: .5rem; }
+.detail-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1.4rem; margin-top: 1rem; }
+.player video, .player img { width: 100%; border-radius: 10px; background: #000; }
+.info table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.info th { text-align: left; color: var(--muted); font-weight: 500;
+  padding: .35rem .6rem .35rem 0; vertical-align: top; white-space: nowrap; }
+.info td { padding: .35rem 0; }
+.metrics th { font-family: ui-monospace, monospace; }
+
+@media (max-width: 860px) {
+  .layout, .detail-grid { grid-template-columns: 1fr; }
+}
