@@ -279,6 +279,17 @@ def _eval(args: argparse.Namespace) -> None:
              use_cache=not args.no_cache)
 
 
+def _build_dataset(args: argparse.Namespace) -> None:
+    from observer.dataset import build_dataset
+
+    build_dataset(
+        Path(args.out), Path(args.dir), recursive=args.recursive,
+        frames_per_clip=args.frames_per_clip,
+        neg_frames_per_clip=args.neg_frames_per_clip,
+        conf=args.conf, val_split=args.val_split,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="observer")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -323,6 +334,20 @@ def main() -> None:
                     help="search present_conf/min_hit_frames for the best thresholds")
     ev.add_argument("--no-cache", action="store_true", help="ignore cached per-frame scores")
     ev.set_defaults(func=_eval)
+
+    ds = sub.add_parser("build-dataset",
+                        help="distil YOLO-World into a YOLO dataset for Hailo training")
+    ds.add_argument("--out", default="dataset", help="output dataset directory")
+    ds.add_argument("--dir", default=DEFAULT_CLIP_DIR, help="directory holding the clips")
+    ds.add_argument("--recursive", action="store_true", help="search subfolders for clips")
+    ds.add_argument("--frames-per-clip", type=int, default=20,
+                    help="max positive frames kept per aircraft clip")
+    ds.add_argument("--neg-frames-per-clip", type=int, default=10,
+                    help="background frames kept per clip")
+    ds.add_argument("--conf", type=float, default=0.25,
+                    help="min teacher confidence to accept a box as a label")
+    ds.add_argument("--val-split", type=float, default=0.2)
+    ds.set_defaults(func=_build_dataset)
 
     args = parser.parse_args()
     args.func(args)

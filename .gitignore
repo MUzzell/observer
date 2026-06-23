@@ -17,6 +17,8 @@ venv/
 *.db
 *.sqlite3
 
+*.csv
+
 # Model weights
 *.pt
 *.hef

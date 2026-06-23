@@ -35,9 +35,13 @@ class Settings(BaseSettings):
     video_extensions: tuple[str, ...] = (".mp4", ".mov", ".mkv", ".avi", ".m4v")
 
     # --- Detector backend -------------------------------------------------
-    # "yoloworld" (open-vocab, default) or "none" (no-op, for tests).
+    # "yoloworld" (open-vocab, default), "hailo" (compiled HEF on the RPi), or
+    # "none" (no-op, for tests).
     detector_backend: str = "yoloworld"
     yoloworld_weights: str = "yolov8x-worldv2.pt"
+    # Hailo: path to the compiled HEF and the model's square input size.
+    hailo_hef_path: Path = REPO_ROOT / "models" / "aircraft_yolov8n.hef"
+    hailo_imgsz: int = 640
     # Prompt used for the yes/no decision. A single clean class word works far
     # better than a competing list (verified on real footage).
     aircraft_prompt: tuple[str, ...] = ("aircraft",)

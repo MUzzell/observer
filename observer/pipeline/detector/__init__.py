@@ -12,6 +12,10 @@ def build_detector(settings: Settings) -> Detector:
         from observer.pipeline.detector.yoloworld_backend import YoloWorldDetector
 
         return YoloWorldDetector(settings)
+    if backend == "hailo":
+        from observer.pipeline.detector.hailo_backend import HailoDetector
+
+        return HailoDetector(settings)
     if backend == "none":
         from observer.pipeline.detector.null_backend import NullDetector
 
