@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import cv2
 import numpy as np
@@ -19,6 +19,9 @@ from observer.pipeline import decode
 from observer.pipeline.aggregate import decide
 from observer.pipeline.detector.base import Detector
 from observer.storage import files
+
+if TYPE_CHECKING:
+    from observer.pipeline.audio.base import AudioDetector
 
 ProgressCb = Callable[[float], None]
 
@@ -43,14 +46,20 @@ class Scan:
 @dataclass
 class ClipResult:
     duration_s: float
-    has_aircraft: bool
-    confidence: float
-    num_hits: int
+    has_aircraft: bool          # final (fused) verdict
+    confidence: float           # final (fused) confidence
+    num_hits: int               # video frames hit
     num_frames: int
     aircraft_type: Optional[str] = None
     type_confidence: float = 0.0
     evidence_path: Optional[Path] = None
     best_time_s: float = 0.0
+    # Audio sub-verdict (populated in "audio"/"fusion" modes when a sidecar WAV
+    # is present).
+    audio_has_aircraft: bool = False
+    audio_confidence: float = 0.0
+    audio_num_hits: int = 0
+    audio_windows: int = 0
 
 
 def scan_clip(
@@ -100,21 +109,47 @@ def process_video(
     detector: Detector,
     on_progress: Optional[ProgressCb] = None,
     media_key: Optional[str] = None,
+    audio_detector: Optional["AudioDetector"] = None,
 ) -> ClipResult:
     key = media_key or path.stem
     scan = scan_clip(path, settings, detector, on_progress)
-    decision = decide(scan.confidences, settings)
+    visual = decide(
+        scan.confidences, settings.present_conf, settings.min_hit_frames,
+        settings.strong_conf,
+    )
 
     result = ClipResult(
         duration_s=scan.duration_s,
-        has_aircraft=decision.has_aircraft,
-        confidence=decision.confidence,
-        num_hits=decision.num_hits,
+        has_aircraft=visual.has_aircraft,
+        confidence=visual.confidence,
+        num_hits=visual.num_hits,
         num_frames=scan.num_frames,
         best_time_s=scan.best.t_seconds if scan.best else 0.0,
     )
 
-    if decision.has_aircraft and scan.best is not None:
+    # Audio sub-verdict from the sidecar WAV, when enabled.
+    if settings.detection_mode in ("audio", "fusion") and audio_detector is not None:
+        wav = path.with_suffix(".wav")
+        if wav.exists():
+            aconfs = audio_detector.scan(wav)
+            adec = decide(
+                aconfs, settings.audio_present_conf,
+                settings.audio_min_hit_frames, settings.audio_strong_conf,
+            )
+            result.audio_has_aircraft = adec.has_aircraft
+            result.audio_confidence = adec.confidence
+            result.audio_num_hits = adec.num_hits
+            result.audio_windows = len(aconfs)
+
+    # Fuse the final verdict per mode ("visual" leaves the video result as-is).
+    if settings.detection_mode == "audio":
+        result.has_aircraft = result.audio_has_aircraft
+        result.confidence = result.audio_confidence
+    elif settings.detection_mode == "fusion":
+        result.has_aircraft = visual.has_aircraft or result.audio_has_aircraft
+        result.confidence = max(visual.confidence, result.audio_confidence)
+
+    if result.has_aircraft and scan.best is not None:
         if settings.enable_type_hint:
             result.aircraft_type, result.type_confidence = detector.classify_type(
                 scan.best.frame

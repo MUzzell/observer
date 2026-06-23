@@ -15,14 +15,13 @@
       {% if c.human_label %}
         <span class="badge badge-label-{{ c.human_label }}" title="manual label">🧑 {{ c.human_label }}</span>
       {% endif %}
-      {% if c.num_frames and c.num_frames > 0 %}
-        {% if c.has_aircraft %}
-          <span class="badge badge-aircraft">aircraft</span>
-          <span class="conf">{{ "%.0f"|format(c.confidence * 100) }}%</span>
-        {% else %}
-          <span class="badge badge-none">none</span>
-        {% endif %}
+      {% if c.has_aircraft %}
+        <span class="badge badge-aircraft">aircraft</span>
+        <span class="conf">{{ "%.0f"|format(c.confidence * 100) }}%</span>
+      {% elif c.num_frames and c.num_frames > 0 %}
+        <span class="badge badge-none">none</span>
       {% endif %}
+      {% if c.audio_has_aircraft %}<span class="badge badge-audio" title="audio detection">🔊</span>{% endif %}
     </div>
     <div class="fname-row">{{ c.filename }}</div>
   </a>

@@ -23,6 +23,11 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27",
 ]
+# Audio aircraft detection (AudioSet CNN). Heavier deps, kept optional.
+audio = [
+    "panns-inference>=0.1.1",
+    "librosa>=0.10",
+]
 # Raspberry Pi only — installed separately on the device alongside the Hailo runtime.
 hailo = [
     # "hailort",  # provided by the HailoRT system package on the Pi

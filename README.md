@@ -52,6 +52,35 @@ observer process path/to/clip.mp4
 observer batch path/to/clips --recursive
 ```
 
+## Audio detection (experimental)
+
+Aircraft are loud and acoustically distinctive — often a cleaner signal than the
+tiny visual targets. With a microphone on the camera Pi recording a sidecar `.wav`
+per clip (see `docs/audio-capture.md`), the processor can detect aircraft from
+sound using an AudioSet model (PANNs), which already has `Helicopter` /
+`Fixed-wing aircraft` / `Aircraft engine` classes.
+
+```bash
+pip install -e ".[audio]"          # panns_inference + librosa (downloads ~80MB model)
+
+# score a single WAV (handy for validating on real recordings first)
+observer audio clip.wav
+
+# run the dashboard using audio, or both signals fused
+OBSERVER_DETECTION_MODE=audio   observer serve   # audio only
+OBSERVER_DETECTION_MODE=fusion  observer serve   # aircraft if video OR audio fires
+```
+
+- `detection_mode`: `visual` (default), `audio`, or `fusion`.
+- Audio is windowed and aggregated with the same persistence rule as video, using
+  its own thresholds (`audio_present_conf`, `audio_min_hit_frames`,
+  `audio_strong_conf`).
+- For a cheap audio-only setup, also set `OBSERVER_DETECTOR_BACKEND=none` so the
+  visual model isn't loaded.
+- **Validate before trusting it:** the PANNs separation of aircraft vs birds/wind
+  hasn't been measured on this footage — record a few real clips and check
+  `observer audio` / `observer eval` before relying on the thresholds.
+
 ## Ground-truth labelling & evaluation
 
 Build a labelled set by hand, then measure and tune the detector against it:
@@ -70,6 +99,13 @@ observer eval --sweep
 `eval` reports precision/recall/F1 against your labels, lists the mismatched
 clips, and (with `--sweep`) recommends `present_conf` / `min_hit_frames`. Per-clip
 scores are cached, so re-running is instant.
+
+Add `--audio` to score the **audio** path instead (scans each clip's sidecar
+`.wav`, uses the audio thresholds, and recommends `OBSERVER_AUDIO_*` values):
+
+```bash
+observer eval --audio --sweep
+```
 
 Drop a clip into `data/incoming/` and watch it appear, process (live progress),
 and render as "aircraft" (with an evidence frame) or "no aircraft".

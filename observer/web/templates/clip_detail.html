@@ -7,14 +7,15 @@
     {% if clip.human_label %}
       <span class="badge badge-label-{{ clip.human_label }}" title="manual label">🧑 {{ clip.human_label }}</span>
     {% endif %}
-    {% if clip.num_frames and clip.num_frames > 0 %}
-      {% if clip.has_aircraft %}
-        <span class="badge badge-aircraft">aircraft detected</span>
-        {% if clip.aircraft_type %}<span class="badge badge-type">{{ clip.aircraft_type }}</span>{% endif %}
-        <span class="conf">{{ "%.0f"|format(clip.confidence * 100) }}% confidence</span>
-      {% else %}
-        <span class="badge badge-none">no aircraft detected</span>
-      {% endif %}
+    {% if clip.has_aircraft %}
+      <span class="badge badge-aircraft">aircraft detected</span>
+      {% if clip.aircraft_type %}<span class="badge badge-type">{{ clip.aircraft_type }}</span>{% endif %}
+      <span class="conf">{{ "%.0f"|format(clip.confidence * 100) }}% confidence</span>
+    {% elif clip.num_frames and clip.num_frames > 0 %}
+      <span class="badge badge-none">no aircraft detected</span>
+    {% endif %}
+    {% if clip.audio_has_aircraft %}
+      <span class="badge badge-audio" title="audio detection">🔊 audio {{ "%.0f"|format(clip.audio_confidence * 100) }}%</span>
     {% endif %}
   </h2>
 

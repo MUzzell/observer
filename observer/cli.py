@@ -2,6 +2,7 @@
 
   observer serve                 # run the dashboard + ingestion worker
   observer process <clip.mp4>    # process a single clip and print detected events
+  observer audio <clip.wav>      # score a single WAV for aircraft (audio only)
   observer batch <dir>           # bulk-process a directory of clips in parallel
 """
 
@@ -276,7 +277,26 @@ def _eval(args: argparse.Namespace) -> None:
     from observer.evaluate import evaluate
 
     evaluate(Path(args.dir), recursive=args.recursive, sweep=args.sweep,
-             use_cache=not args.no_cache)
+             use_cache=not args.no_cache,
+             modality="audio" if args.audio else "visual")
+
+
+def _audio(args: argparse.Namespace) -> None:
+    from observer.pipeline.aggregate import decide
+    from observer.pipeline.audio import build_audio_detector
+
+    settings = get_settings()
+    detector = build_audio_detector(settings)
+    confs = detector.scan(Path(args.wav))
+    d = decide(confs, settings.audio_present_conf, settings.audio_min_hit_frames,
+               settings.audio_strong_conf)
+    print(json.dumps({
+        "wav": Path(args.wav).name,
+        "has_aircraft": d.has_aircraft,
+        "confidence": round(d.confidence, 3),
+        "windows_hit": f"{d.num_hits}/{len(confs)}",
+        "per_window": [round(c, 3) for c in confs],
+    }, indent=2))
 
 
 def _build_dataset(args: argparse.Namespace) -> None:
@@ -303,6 +323,10 @@ def main() -> None:
     proc = sub.add_parser("process", help="process a single clip")
     proc.add_argument("clip")
     proc.set_defaults(func=_process)
+
+    au = sub.add_parser("audio", help="score a single WAV for aircraft (audio only)")
+    au.add_argument("wav")
+    au.set_defaults(func=_audio)
 
     batch = sub.add_parser("batch", help="bulk-process a directory of clips in parallel")
     batch.add_argument("directory")
@@ -332,6 +356,8 @@ def main() -> None:
     ev.add_argument("--recursive", action="store_true", help="search subfolders for clips")
     ev.add_argument("--sweep", action="store_true",
                     help="search present_conf/min_hit_frames for the best thresholds")
+    ev.add_argument("--audio", action="store_true",
+                    help="score the audio path (sidecar .wav) instead of video")
     ev.add_argument("--no-cache", action="store_true", help="ignore cached per-frame scores")
     ev.set_defaults(func=_eval)
 

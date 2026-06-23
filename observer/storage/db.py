@@ -43,6 +43,10 @@ class Video(SQLModel, table=True):
     best_time_s: float = 0.0          # timestamp of the evidence frame
     evidence_path: Optional[str] = None  # annotated best frame, served via /media
 
+    # Audio sub-verdict ("audio"/"fusion" modes); has_aircraft above is the fused result.
+    audio_has_aircraft: bool = Field(default=False, index=True)
+    audio_confidence: float = 0.0
+
     # Human ground-truth label imported from the manual labeller (independent of
     # the detector verdict, so the two can be compared). "aircraft"/"none"/
     # "unreadable"/None.

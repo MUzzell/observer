@@ -34,12 +34,17 @@ class WorkerService:
         self._watcher: IngestWatcher | None = None
         self._consumer_task: asyncio.Task | None = None
         self._detector = None
+        self._audio_detector = None
 
     async def start(self) -> None:
         init_db()
         self._loop = asyncio.get_running_loop()
         self._bus.bind_loop(self._loop)
         self._detector = build_detector(self._settings)
+        if self._settings.detection_mode in ("audio", "fusion"):
+            from observer.pipeline.audio import build_audio_detector
+
+            self._audio_detector = build_audio_detector(self._settings)
         self._watcher = IngestWatcher(self._settings, self._on_ready)
         self._watcher.start()
         self._consumer_task = asyncio.create_task(self._consume())
@@ -98,6 +103,7 @@ class WorkerService:
                     self._detector,
                     on_progress,
                     media_key=files.media_key(working_path),
+                    audio_detector=self._audio_detector,
                 ),
             )
         except Exception as exc:
@@ -125,6 +131,8 @@ class WorkerService:
                 video.aircraft_type = result.aircraft_type
                 video.best_time_s = result.best_time_s
                 video.evidence_path = files.relative_media(result.evidence_path)
+                video.audio_has_aircraft = result.audio_has_aircraft
+                video.audio_confidence = result.audio_confidence
                 video.processed_at = datetime.now(timezone.utc)
                 session.add(video)
                 session.commit()

@@ -10,18 +10,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from observer.config import Settings
-
 
 @dataclass
 class Decision:
     has_aircraft: bool
-    confidence: float  # peak across frames
-    num_hits: int      # frames at/above present_conf
+    confidence: float  # peak across windows
+    num_hits: int      # windows at/above present_conf
 
 
-def decide(frame_confidences: list[float], settings: Settings) -> Decision:
-    peak = max(frame_confidences, default=0.0)
-    num_hits = sum(c >= settings.present_conf for c in frame_confidences)
-    has = num_hits >= settings.min_hit_frames or peak >= settings.strong_conf
+def decide(
+    confidences: list[float],
+    present_conf: float,
+    min_hit_frames: int,
+    strong_conf: float,
+) -> Decision:
+    """Turn per-window confidences into a yes/no. Used for both video frames and
+    audio windows, each passing its own thresholds."""
+    peak = max(confidences, default=0.0)
+    num_hits = sum(c >= present_conf for c in confidences)
+    has = num_hits >= min_hit_frames or peak >= strong_conf
     return Decision(has_aircraft=has, confidence=peak, num_hits=num_hits)

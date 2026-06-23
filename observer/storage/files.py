@@ -23,16 +23,22 @@ def media_key(path: Path) -> str:
     return f"{path.stem}_{digest}"
 
 
-def move_to_processing(path: Path) -> Path:
-    dest = settings.processing_dir / path.name
+def _move_with_sidecar(path: Path, dest_dir: Path) -> Path:
+    """Move the clip and, if present, its matching ``.wav`` audio sidecar."""
+    dest = dest_dir / path.name
     shutil.move(str(path), str(dest))
+    wav = path.with_suffix(".wav")
+    if wav.exists():
+        shutil.move(str(wav), str(dest_dir / wav.name))
     return dest
+
+
+def move_to_processing(path: Path) -> Path:
+    return _move_with_sidecar(path, settings.processing_dir)
 
 
 def move_to_processed(path: Path) -> Path:
-    dest = settings.processed_dir / path.name
-    shutil.move(str(path), str(dest))
-    return dest
+    return _move_with_sidecar(path, settings.processed_dir)
 
 
 def evidence_path(key: str) -> Path:

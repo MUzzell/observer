@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # clips/day), so sample densely enough to catch brief passes.
     detect_sample_fps: float = 3.0
 
-    # --- Per-clip decision ------------------------------------------------
+    # --- Per-clip decision (video) ---------------------------------------
     # A frame "hits" when its best aircraft confidence reaches present_conf.
     present_conf: float = 0.30
     # Aircraft present if it hits on this many frames (persistence rejects the
@@ -65,6 +65,29 @@ class Settings(BaseSettings):
     min_hit_frames: int = 3
     # ... OR a single very strong detection (covers very brief but clear passes).
     strong_conf: float = 0.55
+
+    # --- Audio detection --------------------------------------------------
+    # How the per-clip verdict is formed: "visual" (default), "audio", or
+    # "fusion" (aircraft if either modality fires).
+    detection_mode: str = "visual"
+    audio_backend: str = "panns"        # "panns" (AudioSet CNN) or "none"
+    audio_sample_rate: int = 32000      # model input rate; clips resampled to this
+    audio_window_s: float = 1.0
+    audio_hop_s: float = 0.5
+    # AudioSet class names that count as "aircraft" (the teacher's vocabulary).
+    audio_aircraft_classes: tuple[str, ...] = (
+        "Aircraft",
+        "Aircraft engine",
+        "Helicopter",
+        "Fixed-wing aircraft, airplane",
+        "Propeller, airscrew",
+        "Jet engine",
+    )
+    # Audio thresholds (AudioSet probabilities run lower than detector scores).
+    # Starting points — tune against real recordings with `observer eval`.
+    audio_present_conf: float = 0.10
+    audio_min_hit_frames: int = 3
+    audio_strong_conf: float = 0.30
 
     # --- Web --------------------------------------------------------------
     host: str = "0.0.0.0"

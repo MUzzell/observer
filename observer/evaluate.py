@@ -1,13 +1,14 @@
 """Score the detector against human labels and tune the decision thresholds.
 
-Pulls clips that carry a human label (`aircraft`/`none`), runs the detector to
-collect per-frame confidences (cached so re-runs are instant), then:
-  - reports the confusion matrix / precision / recall at the current settings,
-  - lists the mismatched clips so they can be eyeballed,
-  - sweeps `present_conf` x `min_hit_frames` to recommend the best operating point.
+Works for either modality:
+  - ``visual`` (default): runs the video detector over labelled clips.
+  - ``audio``: runs the audio detector over each clip's sidecar ``.wav``.
 
-Per-frame confidences are cached to ``data/eval_cache.json`` keyed by source path
-and file size, so only new/changed clips are (re)scanned.
+Pulls clips that carry a human label (`aircraft`/`none`), collects per-window
+confidences (cached so re-runs are instant), then reports the confusion matrix /
+precision / recall at the current settings, lists mismatches, and (with
+``--sweep``) recommends thresholds. The scoring/metrics are modality-agnostic —
+only the scanner, thresholds, and recommended env vars differ.
 """
 
 from __future__ import annotations
@@ -15,13 +16,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlmodel import select
 
 from observer.config import Settings, get_settings
-from observer.pipeline.detector import build_detector
-from observer.pipeline.processor import scan_clip
 from observer.storage.db import Video, get_session, init_db
 
 
@@ -90,9 +89,39 @@ def _resolve_path(video: Video, clip_dir: Path, recursive: bool) -> Optional[Pat
     return None
 
 
-def collect(settings: Settings, clip_dir: Path, recursive: bool,
+def _make_scanner(settings: Settings, modality: str) -> Callable[[Path], list[float]]:
+    """Return a function path -> per-window confidences for the chosen modality."""
+    if modality == "audio":
+        from observer.pipeline.audio import build_audio_detector
+
+        print(f"loading audio detector ({settings.audio_backend}) …")
+        det = build_audio_detector(settings)
+        return lambda p: det.scan(p)
+
+    from observer.pipeline.detector import build_detector
+    from observer.pipeline.processor import scan_clip
+
+    print(f"loading detector ({settings.detector_backend}) …")
+    det = build_detector(settings)
+    return lambda p: scan_clip(p, settings, det).confidences
+
+
+def _thresholds(settings: Settings, modality: str) -> tuple[float, int, float]:
+    if modality == "audio":
+        return (settings.audio_present_conf, settings.audio_min_hit_frames,
+                settings.audio_strong_conf)
+    return settings.present_conf, settings.min_hit_frames, settings.strong_conf
+
+
+def _present_grid(modality: str) -> list[float]:
+    # Audio (AudioSet) probabilities run lower, so sweep a lower band.
+    base = 0.05 if modality == "audio" else 0.15
+    return [round(base + 0.05 * i, 2) for i in range(10)]
+
+
+def collect(settings: Settings, clip_dir: Path, recursive: bool, modality: str,
             use_cache: bool = True) -> list[Sample]:
-    cache_path = settings.data_dir / "eval_cache.json"
+    cache_path = settings.data_dir / f"eval_cache_{modality}.json"
     cache: dict = {}
     if use_cache and cache_path.exists():
         cache = json.loads(cache_path.read_text())
@@ -104,25 +133,32 @@ def collect(settings: Settings, clip_dir: Path, recursive: bool,
             ).all()
         )
 
-    detector = None
+    scan: Optional[Callable[[Path], list[float]]] = None
     samples: list[Sample] = []
-    missing = 0
+    missing = no_audio = 0
     for v in labelled:
         path = _resolve_path(v, clip_dir, recursive)
         if path is None:
             missing += 1
             continue
-        key = str(path.resolve())
-        size = path.stat().st_size
+        if modality == "audio":
+            scan_path = path.with_suffix(".wav")
+            if not scan_path.exists():
+                no_audio += 1
+                continue
+        else:
+            scan_path = path
+
+        key = str(scan_path.resolve())
+        size = scan_path.stat().st_size
         entry = cache.get(key)
         if entry and entry.get("size") == size:
             confs = entry["confs"]
         else:
-            if detector is None:
-                print(f"loading detector ({settings.detector_backend}) …")
-                detector = build_detector(settings)
-            print(f"scanning {path.name} …")
-            confs = scan_clip(path, settings, detector).confidences
+            if scan is None:
+                scan = _make_scanner(settings, modality)
+            print(f"scanning {scan_path.name} …")
+            confs = scan(scan_path)
             cache[key] = {"size": size, "confs": confs}
         samples.append(Sample(Path(v.filename).name, v.human_label == "aircraft", confs))
 
@@ -130,6 +166,8 @@ def collect(settings: Settings, clip_dir: Path, recursive: bool,
         cache_path.write_text(json.dumps(cache))
     if missing:
         print(f"({missing} labelled clips not found under {clip_dir}, skipped)")
+    if no_audio:
+        print(f"({no_audio} clips have no sidecar .wav, skipped)")
     return samples
 
 
@@ -141,34 +179,33 @@ def _print_metrics(title: str, m: Metrics) -> None:
 
 
 def evaluate(clip_dir: Path, recursive: bool = False, sweep: bool = False,
-             use_cache: bool = True) -> None:
+             use_cache: bool = True, modality: str = "visual") -> None:
     settings = get_settings()
     init_db()
-    samples = collect(settings, clip_dir, recursive, use_cache)
+    samples = collect(settings, clip_dir, recursive, modality, use_cache)
     n_air = sum(s.is_aircraft for s in samples)
-    print(f"\n{len(samples)} labelled clips scored "
+    print(f"\n{len(samples)} labelled clips scored [{modality}] "
           f"({n_air} aircraft, {len(samples) - n_air} none)")
     if not samples:
-        print("Nothing to evaluate — import some labels first (observer import-labels).")
+        msg = "import some labels first (observer import-labels)"
+        if modality == "audio":
+            msg = "no clips have sidecar .wav files yet"
+        print(f"Nothing to evaluate — {msg}.")
         return
 
-    cur = metrics_at(samples, settings.present_conf, settings.min_hit_frames,
-                     settings.strong_conf)
+    present, hits, strong = _thresholds(settings, modality)
+    cur = metrics_at(samples, present, hits, strong)
     _print_metrics(
-        f"Current settings (present_conf={settings.present_conf}, "
-        f"min_hit_frames={settings.min_hit_frames}, strong_conf={settings.strong_conf}):",
+        f"Current {modality} settings (present={present}, hits={hits}, strong={strong}):",
         cur,
     )
 
     # Mismatches at current settings, for eyeballing.
     misses = []
     for s in samples:
-        pred = _predict(s.confidences, settings.present_conf,
-                        settings.min_hit_frames, settings.strong_conf)
-        if pred != s.is_aircraft:
-            kind = "false positive" if pred else "false negative"
-            peak = max(s.confidences, default=0.0)
-            misses.append((kind, s.name, peak))
+        if _predict(s.confidences, present, hits, strong) != s.is_aircraft:
+            kind = "false positive" if s.is_aircraft is False else "false negative"
+            misses.append((kind, s.name, max(s.confidences, default=0.0)))
     if misses:
         print("\nMismatches:")
         for kind, name, peak in sorted(misses):
@@ -178,22 +215,20 @@ def evaluate(clip_dir: Path, recursive: bool = False, sweep: bool = False,
         print("\nRun with --sweep to search for better thresholds.")
         return
 
-    present_grid = [round(0.15 + 0.05 * i, 2) for i in range(10)]  # 0.15..0.60
-    hits_grid = [1, 2, 3, 4, 5]
     results = []
-    for present in present_grid:
-        for hits in hits_grid:
-            m = metrics_at(samples, present, hits, settings.strong_conf)
-            results.append((present, hits, m))
+    for p in _present_grid(modality):
+        for h in (1, 2, 3, 4, 5):
+            results.append((p, h, metrics_at(samples, p, h, strong)))
     results.sort(key=lambda r: (r[2].f1, r[2].recall), reverse=True)
 
     print("\nTop threshold combinations by F1:")
     print(f"  {'present':>8} {'hits':>5} {'prec':>6} {'rec':>6} {'F1':>6} {'acc':>6}")
-    for present, hits, m in results[:8]:
-        print(f"  {present:>8} {hits:>5} {m.precision:>6.2f} {m.recall:>6.2f} "
+    for p, h, m in results[:8]:
+        print(f"  {p:>8} {h:>5} {m.precision:>6.2f} {m.recall:>6.2f} "
               f"{m.f1:>6.2f} {m.accuracy:>6.2f}")
 
     best_present, best_hits, _ = results[0]
+    prefix = "OBSERVER_AUDIO" if modality == "audio" else "OBSERVER"
     print("\nRecommended — apply with:")
-    print(f"  export OBSERVER_PRESENT_CONF={best_present}")
-    print(f"  export OBSERVER_MIN_HIT_FRAMES={best_hits}")
+    print(f"  export {prefix}_PRESENT_CONF={best_present}")
+    print(f"  export {prefix}_MIN_HIT_FRAMES={best_hits}")

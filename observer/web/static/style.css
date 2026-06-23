@@ -59,6 +59,7 @@ main { padding: 1.2rem; }
 .badge-aircraft { background: #1d3f2c; color: #7be0a6; }
 .badge-type { background: #1d3a5f; color: #8fc1ff; }
 .badge-none { background: #333; color: #999; }
+.badge-audio { background: #2a1d3f; color: #c79bf0; }
 /* Manual (human) labels — outlined to distinguish from detector badges. */
 .badge-label-aircraft { background: transparent; border: 1px solid #7be0a6; color: #7be0a6; }
 .badge-label-none { background: transparent; border: 1px solid #888; color: #aaa; }
