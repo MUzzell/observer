@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from observer.config import get_settings
+from observer.naming import parse_capture_time
 
 
 def _serve(args: argparse.Namespace) -> None:
@@ -154,6 +155,7 @@ def _batch(args: argparse.Namespace) -> None:
                 session.add(
                     Video(
                         filename=abspath,
+                        captured_at=parse_capture_time(name),
                         status=VideoStatus.done,
                         progress=1.0,
                         duration_s=r["duration"],
@@ -240,6 +242,8 @@ def _import_labels(args: argparse.Namespace) -> None:
             else:
                 n_updated += 1
             video.human_label = label
+            if video.captured_at is None:
+                video.captured_at = parse_capture_time(name)
             if video.status == VideoStatus.pending:
                 video.status = VideoStatus.done
 

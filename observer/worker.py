@@ -16,6 +16,7 @@ from pathlib import Path
 
 from observer.config import Settings, get_settings
 from observer.ingest.watcher import IngestWatcher
+from observer.naming import parse_capture_time
 from observer.pipeline.detector import build_detector
 from observer.pipeline.processor import ClipResult, process_video
 from observer.storage import files
@@ -72,7 +73,11 @@ class WorkerService:
 
     async def _process_one(self, path: Path) -> None:
         with get_session() as session:
-            video = Video(filename=path.name, status=VideoStatus.processing)
+            video = Video(
+                filename=path.name,
+                status=VideoStatus.processing,
+                captured_at=parse_capture_time(path.name),
+            )
             session.add(video)
             session.commit()
             session.refresh(video)

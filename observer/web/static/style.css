@@ -10,6 +10,7 @@
   --red: #e2574c;
 }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -51,8 +52,64 @@ main { padding: 1.2rem; }
   align-items: center; justify-content: center; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .noimg { color: var(--muted); font-size: .8rem; }
-.meta { display: flex; align-items: center; gap: .4rem; padding: .55rem .65rem; }
+.card-title { padding: .5rem .65rem 0; font-weight: 600; font-size: .9rem;
+  font-variant-numeric: tabular-nums; }
+.meta { display: flex; align-items: center; gap: .4rem; padding: .35rem .65rem .55rem; }
 .conf { margin-left: auto; color: var(--muted); font-size: .85rem; }
+
+.page-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.page-title { font-size: 1.3rem; margin: 0; }
+.filter { display: inline-flex; background: var(--panel); border: 1px solid #2b3742;
+  border-radius: 8px; overflow: hidden; }
+.filter a { padding: .4rem .8rem; font-size: .85rem; color: var(--muted);
+  border-left: 1px solid #2b3742; }
+.filter a:first-child { border-left: none; }
+.filter a:hover { background: var(--panel2); text-decoration: none; }
+.filter a.on { background: var(--accent); color: #06121f; font-weight: 600; }
+
+/* Calendar-day sections */
+.day { margin-bottom: 1.8rem; scroll-margin-top: 1rem; }
+.day:target .day-header { color: var(--accent); }
+.day-header { display: flex; align-items: baseline; gap: .8rem; font-size: 1rem;
+  margin: .2rem 0 .9rem; padding-bottom: .4rem; border-bottom: 1px solid #2b3742; }
+.day-title { font-weight: 700; }
+.day-meta { color: var(--muted); font-size: .82rem; }
+
+/* Calendar (sidebar navigation) */
+.calendar { margin-bottom: 1.4rem; }
+.cal-head { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: .5rem; }
+.cal-month { font-weight: 600; font-size: .92rem; }
+.cal-nav { display: inline-flex; width: 1.7rem; height: 1.7rem; align-items: center;
+  justify-content: center; border-radius: 6px; color: var(--text); font-size: 1.1rem; }
+.cal-nav:hover { background: var(--panel2); text-decoration: none; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-dow { text-align: center; color: var(--muted); font-size: .68rem;
+  padding-bottom: .2rem; text-transform: uppercase; }
+.cal-day { position: relative; aspect-ratio: 1; display: flex; align-items: center;
+  justify-content: center; font-size: .8rem; border-radius: 6px; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.cal-day.out { opacity: .35; }
+.cal-day.today { outline: 1px solid #3a4753; }
+a.cal-day { text-decoration: none; }
+/* Clip-only days: navigable but understated. */
+a.cal-day.has-clips { color: #8c9aa6; }
+a.cal-day.has-clips:hover { background: var(--panel2); }
+/* Days with detected aircraft events: the calendar's main signal. */
+a.cal-day.event { background: var(--green); color: #06160e; font-weight: 700; }
+a.cal-day.event:hover { filter: brightness(1.08); }
+.cal-count { position: absolute; top: 1px; right: 4px; font-size: .58rem; font-weight: 700; }
+/* Selected day: accent outline so it composes with the green event fill. */
+a.cal-day.active { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.cal-legend { display: flex; align-items: center; gap: .4rem; margin-top: .5rem;
+  color: var(--muted); font-size: .72rem; }
+.cal-swatch { width: 11px; height: 11px; border-radius: 3px; background: var(--green); }
+
+.clear-day { margin-left: auto; font-size: .82rem; }
+.timestamp { color: var(--muted); font-variant-numeric: tabular-nums; margin: 0 0 .4rem;
+  font-size: .95rem; }
 
 .badge { font-size: .7rem; padding: .15rem .45rem; border-radius: 999px;
   text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }

@@ -3,6 +3,9 @@
 {% block content %}
 <section class="detail">
   <a href="/" class="back">← back</a>
+  <p class="timestamp">
+    {% if clip.captured_at %}{{ clip.captured_at.strftime('%A %-d %B %Y · %H:%M:%S') }}{% else %}{{ clip.filename }}{% endif %}
+  </p>
   <h2>
     {% if clip.human_label %}
       <span class="badge badge-label-{{ clip.human_label }}" title="manual label">🧑 {{ clip.human_label }}</span>
@@ -37,6 +40,7 @@
     <div class="info">
       <table>
         <tr><th>Clip</th><td>{{ clip.filename }}</td></tr>
+        {% if clip.captured_at %}<tr><th>Captured</th><td>{{ clip.captured_at.strftime('%Y-%m-%d %H:%M:%S') }}</td></tr>{% endif %}
         {% if clip.human_label %}<tr><th>Manual label</th><td>{{ clip.human_label }}</td></tr>{% endif %}
         {% if clip.num_frames and clip.num_frames > 0 %}
         <tr><th>Detector verdict</th><td>{{ "aircraft" if clip.has_aircraft else "no aircraft" }}</td></tr>

@@ -1,0 +1,16 @@
+{% if not groups %}
+  <p class="empty">No events yet. Drop a clip into <code>data/incoming/</code>.</p>
+{% else %}
+  {% for g in groups %}
+  <section class="day" id="day-{{ g.date.isoformat() }}">
+    <h2 class="day-header">
+      <span class="day-title">{{ g.date.strftime('%A %-d %B %Y') }}</span>
+      <span class="day-meta">{{ g.n_clips }} clip{{ 's' if g.n_clips != 1 }}{% if g.n_aircraft %}
+        · {{ g.n_aircraft }} aircraft{% endif %}</span>
+    </h2>
+    <div class="grid">
+      {% for c in g.clips %}{% include "_card.html" %}{% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+{% endif %}

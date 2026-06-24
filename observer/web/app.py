@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import calendar as _calendar
 import json
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta
+from itertools import groupby
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, or_
 from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
@@ -41,39 +45,110 @@ app = FastAPI(title="Observer", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
-def _query_clips(show: str) -> list[Video]:
+# Effective time for ordering/grouping: capture time when known, else arrival.
+_EFFECTIVE = func.coalesce(Video.captured_at, Video.received_at)
+
+
+def _effective(v: Video) -> datetime:
+    return v.captured_at or v.received_at
+
+
+# A clip counts as "aircraft" if the detector flagged it OR a human labelled it so.
+_IS_AIRCRAFT_SQL = or_(
+    Video.has_aircraft == True,  # noqa: E712
+    func.coalesce(Video.human_label, "") == "aircraft",
+)
+
+
+def _is_aircraft(v: Video) -> bool:
+    return v.has_aircraft or v.human_label == "aircraft"
+
+
+def _all_clips(show: str = "all") -> list[Video]:
     with get_session() as session:
-        stmt = select(Video).order_by(Video.received_at.desc())
+        stmt = select(Video).order_by(_EFFECTIVE.desc())
         if show == "aircraft":
-            stmt = stmt.where(Video.has_aircraft == True)  # noqa: E712
+            stmt = stmt.where(_IS_AIRCRAFT_SQL)
         elif show == "none":
-            stmt = stmt.where(Video.has_aircraft == False)  # noqa: E712
-        elif show == "labelled_aircraft":
-            stmt = stmt.where(Video.human_label == "aircraft")
-        elif show == "labelled_none":
-            stmt = stmt.where(Video.human_label == "none")
-        elif show == "labelled":
-            stmt = stmt.where(Video.human_label.is_not(None))
+            stmt = stmt.where(~_IS_AIRCRAFT_SQL)
         return list(session.exec(stmt).all())
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
-    clips = _query_clips("labelled_aircraft")
+def _group_by_day(clips: list[Video]) -> list[dict]:
+    """The full event timeline, grouped by calendar day (newest first)."""
+    groups = []
+    for day, items in groupby(clips, key=lambda v: _effective(v).date()):
+        items = list(items)
+        groups.append({
+            "date": day,
+            "clips": items,
+            "n_clips": len(items),
+            "n_aircraft": sum(1 for v in items if _is_aircraft(v)),
+        })
+    return groups
+
+
+def _day_counts() -> dict[date, dict]:
+    """Per-day clip / aircraft counts, keyed by date, for the calendar."""
     with get_session() as session:
-        recent = list(
-            session.exec(select(Video).order_by(Video.received_at.desc()).limit(15)).all()
-        )
-    return templates.TemplateResponse(
-        request, "index.html", {"clips": clips, "recent": recent}
-    )
+        rows = session.exec(select(Video)).all()
+    counts: dict[date, dict] = {}
+    for v in rows:
+        agg = counts.setdefault(_effective(v).date(), {"n_clips": 0, "n_aircraft": 0})
+        agg["n_clips"] += 1
+        if _is_aircraft(v):
+            agg["n_aircraft"] += 1
+    return counts
+
+
+def _month_neighbours(first: date) -> tuple[str, str]:
+    prev = (first - timedelta(days=1)).replace(day=1)
+    nxt = (first + timedelta(days=31)).replace(day=1)
+    return prev.strftime("%Y-%m"), nxt.strftime("%Y-%m")
+
+
+def _build_calendar(month: date, counts: dict[date, dict]) -> list[list[dict]]:
+    today = date.today()
+    weeks = []
+    for week in _calendar.Calendar(firstweekday=0).monthdatescalendar(
+            month.year, month.month):
+        weeks.append([
+            {
+                "date": d,
+                "in_month": d.month == month.month,
+                "n_clips": counts.get(d, {}).get("n_clips", 0),
+                "n_aircraft": counts.get(d, {}).get("n_aircraft", 0),
+                "today": d == today,
+            }
+            for d in week
+        ])
+    return weeks
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, show: str = Query("all"), month: str = Query(None)):
+    # The timeline can be filtered by aircraft presence; the calendar is always
+    # an unfiltered overview that marks days with detected aircraft.
+    counts = _day_counts()
+    fallback = max(counts) if counts else date.today()
+    try:
+        shown_month = datetime.strptime(month, "%Y-%m").date() if month else fallback
+    except ValueError:
+        shown_month = fallback
+    shown_month = shown_month.replace(day=1)
+    prev_month, next_month = _month_neighbours(shown_month)
+    return templates.TemplateResponse(request, "index.html", {
+        "groups": _group_by_day(_all_clips(show)), "show": show,
+        "cal_weeks": _build_calendar(shown_month, counts),
+        "cal_month": shown_month, "cal_prev": prev_month, "cal_next": next_month,
+        "cal_dow": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    })
 
 
 @app.get("/clips", response_class=HTMLResponse)
-def clips_partial(request: Request, show: str = Query("aircraft")):
+def clips_partial(request: Request, show: str = Query("all")):
     return templates.TemplateResponse(
-        request, "_clip_grid.html", {"clips": _query_clips(show)}
-    )
+        request, "_day_groups.html", {"groups": _group_by_day(_all_clips(show))})
 
 
 @app.get("/clip/{clip_id}", response_class=HTMLResponse)

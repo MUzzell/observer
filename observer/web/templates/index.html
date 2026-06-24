@@ -2,40 +2,52 @@
 {% block content %}
 <section class="layout">
   <div class="main-col">
-    <div class="controls">
-      <form hx-get="/clips" hx-target="#clip-grid" hx-trigger="change" hx-swap="innerHTML">
-        <label>Show
-          <select name="show">
-            <option value="labelled_aircraft" selected>Labelled: aircraft</option>
-            <option value="labelled_none">Labelled: none</option>
-            <option value="labelled">Labelled: any</option>
-            <option value="aircraft">Detected: aircraft</option>
-            <option value="none">Detected: none</option>
-            <option value="all">All clips</option>
-          </select>
-        </label>
-      </form>
+    {% set m = '&month=' ~ cal_month.strftime('%Y-%m') %}
+    <div class="page-head">
+      <h1 class="page-title">Events</h1>
+      <div class="filter">
+        <a class="{{ 'on' if show == 'all' }}" href="/?show=all{{ m }}">All</a>
+        <a class="{{ 'on' if show == 'aircraft' }}" href="/?show=aircraft{{ m }}">Aircraft</a>
+        <a class="{{ 'on' if show == 'none' }}" href="/?show=none{{ m }}">No aircraft</a>
+      </div>
     </div>
-
-    <h2>Clips</h2>
-    <div id="clip-grid">
-      {% include "_clip_grid.html" %}
+    <div id="content">
+      {% include "_day_groups.html" %}
     </div>
   </div>
 
   <aside class="side-col">
+    <div class="calendar">
+      <div class="cal-head">
+        <a class="cal-nav" href="/?show={{ show }}&month={{ cal_prev }}" title="previous month">‹</a>
+        <span class="cal-month">{{ cal_month.strftime('%B %Y') }}</span>
+        <a class="cal-nav" href="/?show={{ show }}&month={{ cal_next }}" title="next month">›</a>
+      </div>
+      <div class="cal-grid">
+        {% for d in cal_dow %}<span class="cal-dow">{{ d }}</span>{% endfor %}
+        {% for week in cal_weeks %}{% for cell in week %}
+          {% if cell.n_aircraft %}
+          <a class="cal-day event {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}"
+             href="#day-{{ cell.date.isoformat() }}"
+             title="{{ cell.n_aircraft }} aircraft ({{ cell.n_clips }} clip{{ 's' if cell.n_clips != 1 }})">
+            {{ cell.date.day }}<span class="cal-count">{{ cell.n_aircraft }}</span>
+          </a>
+          {% elif cell.n_clips %}
+          <a class="cal-day has-clips {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}"
+             href="#day-{{ cell.date.isoformat() }}"
+             title="{{ cell.n_clips }} clip{{ 's' if cell.n_clips != 1 }}, no detections">
+            {{ cell.date.day }}
+          </a>
+          {% else %}
+          <span class="cal-day {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}">{{ cell.date.day }}</span>
+          {% endif %}
+        {% endfor %}{% endfor %}
+      </div>
+      <div class="cal-legend"><span class="cal-swatch"></span> aircraft</div>
+    </div>
+
     <h2>Live activity</h2>
     <ul id="activity" class="activity"></ul>
-
-    <h3>Recent clips</h3>
-    <ul id="videos" class="videos">
-      {% for v in recent %}
-      <li data-video-id="{{ v.id }}">
-        <span class="fname">{{ v.filename }}</span>
-        <span class="status status-{{ v.status.value }}">{{ v.status.value }}</span>
-      </li>
-      {% endfor %}
-    </ul>
   </aside>
 </section>
 {% endblock %}
