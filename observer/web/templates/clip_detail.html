@@ -30,10 +30,15 @@
             hx-confirm="Reprocess this clip? Its detector verdict will be recomputed.">
       ↻ Reprocess
     </button>
-    <button class="ctl-btn danger"
+    <button class="ctl-btn" title="remove the database entry; leave the files on disk"
             hx-post="/clip/{{ clip.id }}/clear"
             hx-confirm="Remove this clip from the database? The files on disk are left as-is.">
-      🗑 Clear
+      ✕ Clear
+    </button>
+    <button class="ctl-btn danger" title="wipe the clip and its stills from disk"
+            hx-post="/clip/{{ clip.id }}/delete"
+            hx-confirm="Permanently delete this clip? Its video, audio and evidence still will be wiped from disk. This cannot be undone.">
+      🗑 Delete
     </button>
   </div>
 

@@ -57,6 +57,43 @@ def relative_media(path: Path | str | None) -> str | None:
     return str(Path(path).relative_to(settings.data_dir))
 
 
+def delete_clip_media(
+    filename: str,
+    source_path: str | None = None,
+    evidence_path: str | None = None,
+) -> list[Path]:
+    """Wipe every on-disk artefact for a clip and return what was removed.
+
+    Covers the video in any lifecycle dir (incoming/processing/processed) plus
+    an imported source copy, each clip's ``.wav`` audio sidecar, and the
+    evidence/thumbnail still. Missing files are skipped silently. Used by the
+    dashboard 'delete' action to discard irrelevant captures wholesale.
+    """
+    candidates: list[Path] = [
+        d / filename
+        for d in (settings.incoming_dir, settings.processing_dir, settings.processed_dir)
+    ]
+    if source_path:
+        candidates.append(Path(source_path))
+    # Audio sidecars sit next to each video copy.
+    candidates += [c.with_suffix(".wav") for c in list(candidates)]
+    if evidence_path:
+        # evidence_path is stored relative to the data dir (served via /media).
+        still = (settings.data_dir / evidence_path).resolve()
+        if str(still).startswith(str(settings.data_dir.resolve())):
+            candidates.append(still)
+
+    removed: list[Path] = []
+    for p in candidates:
+        try:
+            if p.is_file():
+                p.unlink()
+                removed.append(p)
+        except OSError:
+            pass
+    return removed
+
+
 def locate_clip(filename: str, source_path: str | None = None) -> Path | None:
     """Find a clip's current on-disk location regardless of lifecycle stage.
 

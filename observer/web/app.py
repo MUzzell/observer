@@ -250,6 +250,23 @@ def clear_clip(clip_id: int):
     return Response(status_code=200, headers={"HX-Redirect": "/"})
 
 
+@app.post("/clip/{clip_id}/delete")
+def delete_clip(clip_id: int):
+    """Delete a clip outright: drop its DB row AND wipe its media (video, audio
+    sidecar, evidence still) from disk. For irrelevant captures — unlike
+    ``clear``, nothing is left behind to be re-ingested."""
+    with get_session() as session:
+        clip = session.get(Video, clip_id)
+        if clip is None:
+            return Response(status_code=404)
+        filename, source_path, evidence_path = (
+            clip.filename, clip.source_path, clip.evidence_path)
+        session.delete(clip)
+        session.commit()
+    files.delete_clip_media(filename, source_path, evidence_path)
+    return Response(status_code=200, headers={"HX-Redirect": "/"})
+
+
 @app.post("/clip/{clip_id}/reprocess")
 def reprocess_clip(request: Request, clip_id: int):
     """Reset a clip's processing state and re-run the detector, whatever state
