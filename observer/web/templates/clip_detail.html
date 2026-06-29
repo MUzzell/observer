@@ -22,17 +22,22 @@
     {% endif %}
   </h2>
 
+  {% include "_label_box.html" %}
+
   <div class="detail-grid">
     <div class="player">
+      {% if clip.status.value in ("pending", "processing") %}
+        <div class="processing-note">
+          ⏳ Still processing this clip…
+          <span class="muted">({{ clip.status.value }}{% if clip.progress %} · {{ "%.0f"|format(clip.progress * 100) }}%{% endif %})</span>
+        </div>
+      {% else %}
       <video controls preload="metadata"
              {% if clip.evidence_path %}poster="/media/{{ clip.evidence_path }}"{% endif %}>
-        {% if clip.source_path %}
-          <source src="/source/{{ clip.id }}" type="video/mp4" />
-        {% else %}
-          <source src="/media/processed/{{ clip.filename }}" type="video/mp4" />
-        {% endif %}
+        <source src="/clip/{{ clip.id }}/video" type="video/mp4" />
       </video>
-      {% if clip.evidence_path %}
+      {% endif %}
+      {% if clip.evidence_path and clip.has_aircraft %}
         <p class="caption">Evidence frame (best detection at {{ "%.1f"|format(clip.best_time_s) }}s):</p>
         <img class="evidence" src="/media/{{ clip.evidence_path }}" alt="evidence" />
       {% endif %}

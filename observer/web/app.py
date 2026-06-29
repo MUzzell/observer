@@ -10,15 +10,16 @@ from datetime import date, datetime, timedelta
 from itertools import groupby
 from pathlib import Path
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_
+from sqlalchemy import case, func
 from sqlmodel import select
 from sse_starlette.sse import EventSourceResponse
 
 from observer.config import get_settings
+from observer.storage import files
 from observer.storage.db import Video, get_session, init_db
 from observer.web.events_bus import EventBus
 from observer.worker import WorkerService
@@ -53,15 +54,21 @@ def _effective(v: Video) -> datetime:
     return v.captured_at or v.received_at
 
 
-# A clip counts as "aircraft" if the detector flagged it OR a human labelled it so.
-_IS_AIRCRAFT_SQL = or_(
-    Video.has_aircraft == True,  # noqa: E712
-    func.coalesce(Video.human_label, "") == "aircraft",
+# A manual label, when present, OVERRIDES the detector: "aircraft" forces yes,
+# "none"/"unreadable" force no. With no manual label we fall back to the detector.
+_IS_AIRCRAFT_SQL = case(
+    (Video.human_label == "aircraft", True),
+    (Video.human_label.in_(("none", "unreadable")), False),
+    else_=Video.has_aircraft == True,  # noqa: E712
 )
 
 
 def _is_aircraft(v: Video) -> bool:
-    return v.has_aircraft or v.human_label == "aircraft"
+    if v.human_label == "aircraft":
+        return True
+    if v.human_label in ("none", "unreadable"):
+        return False
+    return v.has_aircraft
 
 
 def _all_clips(show: str = "all") -> list[Video]:
@@ -181,6 +188,40 @@ def clip_detail(request: Request, clip_id: int):
         if clip is None:
             return Response(status_code=404)
     return templates.TemplateResponse(request, "clip_detail.html", {"clip": clip})
+
+
+@app.get("/clip/{clip_id}/video")
+def clip_video(clip_id: int):
+    """Serve the clip from wherever it currently lives (incoming/processing/
+    processed/source) rather than assuming ``processed/``, so a clip mid-pipeline
+    still plays."""
+    with get_session() as session:
+        clip = session.get(Video, clip_id)
+    if clip is None:
+        return Response(status_code=404)
+    path = files.locate_clip(clip.filename, clip.source_path)
+    if path is None:
+        return Response(status_code=404)
+    return FileResponse(path)
+
+
+# Manual override labels the dashboard can set; "clear" removes the override.
+_LABELS = {"aircraft", "none", "unreadable", "clear"}
+
+
+@app.post("/clip/{clip_id}/label", response_class=HTMLResponse)
+def set_label(request: Request, clip_id: int, value: str = Form(...)):
+    if value not in _LABELS:
+        return Response(status_code=400)
+    with get_session() as session:
+        clip = session.get(Video, clip_id)
+        if clip is None:
+            return Response(status_code=404)
+        clip.human_label = None if value == "clear" else value
+        session.add(clip)
+        session.commit()
+        session.refresh(clip)
+        return templates.TemplateResponse(request, "_label_box.html", {"clip": clip})
 
 
 @app.get("/media/{path:path}")

@@ -1,0 +1,24 @@
+<div id="label-box" class="label-box">
+  <div class="label-current">
+    {% if clip.human_label %}
+      Manual override:
+      <span class="badge badge-label-{{ clip.human_label }}">🧑 {{ clip.human_label }}</span>
+      <span class="muted">(overrides the detector)</span>
+    {% else %}
+      <span class="muted">No manual label — using the detector verdict.</span>
+    {% endif %}
+  </div>
+  <div class="label-actions">
+    <button class="lbl-btn {{ 'on' if clip.human_label == 'aircraft' }}"
+            hx-post="/clip/{{ clip.id }}/label" hx-vals='{"value":"aircraft"}'
+            hx-target="#label-box" hx-swap="outerHTML">✈ Aircraft</button>
+    <button class="lbl-btn {{ 'on' if clip.human_label == 'none' }}"
+            hx-post="/clip/{{ clip.id }}/label" hx-vals='{"value":"none"}'
+            hx-target="#label-box" hx-swap="outerHTML">No aircraft</button>
+    {% if clip.human_label %}
+      <button class="lbl-btn ghost"
+              hx-post="/clip/{{ clip.id }}/label" hx-vals='{"value":"clear"}'
+              hx-target="#label-box" hx-swap="outerHTML">clear</button>
+    {% endif %}
+  </div>
+</div>

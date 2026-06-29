@@ -160,6 +160,23 @@ a.cal-day.active { outline: 2px solid var(--accent); outline-offset: -2px; }
 .status-error { color: var(--red); }
 .empty { color: var(--muted); }
 
+/* Manual label override */
+.label-box { display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; background: var(--panel); border: 1px solid #2b3742;
+  border-radius: 8px; padding: .6rem .9rem; margin: 1rem 0; }
+.label-current { font-size: .88rem; }
+.label-actions { display: inline-flex; gap: .5rem; }
+.lbl-btn { background: var(--panel2); color: var(--text); border: 1px solid #33414d;
+  border-radius: 6px; padding: .35rem .7rem; font-size: .85rem; cursor: pointer; }
+.lbl-btn:hover { border-color: var(--accent); }
+.lbl-btn.on { background: var(--accent); color: #06121f; border-color: var(--accent);
+  font-weight: 600; }
+.lbl-btn.ghost { background: transparent; color: var(--muted); }
+.muted { color: var(--muted); }
+.processing-note { background: var(--panel); border: 1px solid #2b3742;
+  border-radius: 10px; padding: 2rem 1.2rem; text-align: center; color: var(--text);
+  font-size: .95rem; }
+
 .detail { max-width: 1000px; margin: 0 auto; }
 .back { display: inline-block; margin-bottom: .8rem; }
 .detail h2 { display: flex; align-items: center; gap: .5rem; }

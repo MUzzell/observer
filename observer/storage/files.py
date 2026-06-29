@@ -55,3 +55,22 @@ def relative_media(path: Path | str | None) -> str | None:
     if path is None:
         return None
     return str(Path(path).relative_to(settings.data_dir))
+
+
+def locate_clip(filename: str, source_path: str | None = None) -> Path | None:
+    """Find a clip's current on-disk location regardless of lifecycle stage.
+
+    A clip moves incoming/ -> processing/ -> processed/ as it's handled, so its
+    DB row can live in any of those at a given moment (an imported clip lives at
+    its original ``source_path``). Returns the first candidate that exists, in
+    order of likelihood, else ``None``.
+    """
+    candidates: list[Path] = []
+    if source_path:
+        candidates.append(Path(source_path))
+    for d in (settings.processed_dir, settings.processing_dir, settings.incoming_dir):
+        candidates.append(d / filename)
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None

@@ -41,6 +41,9 @@ class Scan:
     best: Optional[BestDetection] = None
     duration_s: float = 0.0
     num_frames: int = 0
+    # A representative frame (≈ middle of the clip) kept for a thumbnail when no
+    # detection produces an annotated evidence image.
+    poster: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -72,11 +75,17 @@ def scan_clip(
     the single best detection (for the evidence image). No decision is made here."""
     info = decode.probe(path)
     total = max(1, int(info.duration_s * settings.detect_sample_fps))
+    mid = max(1, total // 2)
     scan = Scan(duration_s=info.duration_s)
+    last_image: Optional[np.ndarray] = None
 
     # max_width=0 -> no downscale; the detector wants full native resolution.
     for sf in decode.iter_frames(path, settings.detect_sample_fps, max_width=0):
         scan.num_frames += 1
+        last_image = sf.image
+        # Grab a mid-clip frame for the fallback thumbnail (cheap single copy).
+        if scan.num_frames == mid:
+            scan.poster = sf.image.copy()
         dets = detector.detect(sf.image)
         if dets:
             top = max(dets, key=lambda d: d.confidence)
@@ -87,6 +96,9 @@ def scan_clip(
                 )
         if on_progress:
             on_progress(min(0.95, scan.num_frames / total))
+    # If the clip was shorter than estimated, fall back to the last frame seen.
+    if scan.poster is None and last_image is not None:
+        scan.poster = last_image.copy()
     if on_progress:
         on_progress(1.0)
     return scan
@@ -149,6 +161,7 @@ def process_video(
         result.has_aircraft = visual.has_aircraft or result.audio_has_aircraft
         result.confidence = max(visual.confidence, result.audio_confidence)
 
+    evidence = files.evidence_path(key)
     if result.has_aircraft and scan.best is not None:
         if settings.enable_type_hint:
             result.aircraft_type, result.type_confidence = detector.classify_type(
@@ -156,8 +169,12 @@ def process_video(
             )
         label = result.aircraft_type or scan.best.label
         annotated = _draw_box(scan.best.frame, scan.best.box, f"{label} {scan.best.confidence:.2f}")
-        evidence = files.evidence_path(key)
         cv2.imwrite(str(evidence), annotated)
+        result.evidence_path = evidence
+    elif scan.poster is not None:
+        # No detection to annotate — still save a plain screenshot so the clip
+        # has a thumbnail rather than a bare "done" status label.
+        cv2.imwrite(str(evidence), scan.poster)
         result.evidence_path = evidence
 
     return result
