@@ -1,0 +1,17 @@
+# CPU-only build constraints (x86_64 dev / processor machines).
+#
+# ultralytics depends on torch, which by default resolves to the CUDA build on
+# x86_64 — dragging in ~3.4 GB of nvidia-* + triton wheels we never use (detection
+# runs on CPU here, or on the Hailo accelerator on the Pi). These constraints pin
+# the CPU torch wheels instead.
+#
+# Use it when installing:
+#     pip install -e . -c constraints.txt
+#
+# Not needed on the Raspberry Pi (ARM64): there are no nvidia CUDA wheels for ARM,
+# so torch resolves to a CPU build already.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.12.1+cpu
+torchvision==0.27.1+cpu
