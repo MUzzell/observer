@@ -32,6 +32,13 @@ bus = EventBus()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Re-assert logging here too: under `--reload` (and a bare
+    # `uvicorn observer.web.app:app`) the worker runs in a process the CLI
+    # never configured, and uvicorn's own dictConfig may have reset the root
+    # handlers. setup_logging is idempotent / self-healing.
+    from observer.logging_setup import setup_logging
+
+    setup_logging(settings.data_dir)
     init_db()
     worker = WorkerService(bus, settings)
     await worker.start()

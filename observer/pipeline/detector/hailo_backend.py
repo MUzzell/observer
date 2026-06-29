@@ -17,10 +17,14 @@ Single class only (class 0 = aircraft); ``classify_type`` is unsupported.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
 from observer.config import Settings
 from observer.pipeline.detector.base import Detection
+
+log = logging.getLogger("observer.detector.hailo")
 
 
 class HailoDetector:
@@ -31,28 +35,52 @@ class HailoDetector:
     def _ensure_model(self) -> None:
         if self._ready:
             return
-        from hailo_platform import (  # type: ignore  # provided by HailoRT on the Pi
-            HEF,
-            ConfigureParams,
-            HailoStreamInterface,
-            InferVStreams,
-            InputVStreamParams,
-            OutputVStreamParams,
-            VDevice,
-        )
+        hef_path = str(self._settings.hailo_hef_path)
+        log.info("initialising Hailo backend (hef=%s)", hef_path)
+        try:
+            from hailo_platform import (  # type: ignore  # provided by HailoRT on the Pi
+                HEF,
+                ConfigureParams,
+                HailoStreamInterface,
+                InferVStreams,
+                InputVStreamParams,
+                OutputVStreamParams,
+                VDevice,
+            )
+        except Exception:
+            log.exception(
+                "failed to import hailo_platform — is HailoRT installed and "
+                "exposed to this venv? (see docs/processor-pi-install.md §7c)"
+            )
+            raise
 
-        hef = HEF(str(self._settings.hailo_hef_path))
-        self._vdevice = VDevice()
-        cfg = ConfigureParams.create_from_hef(hef, interface=HailoStreamInterface.PCIe)
-        self._network_group = self._vdevice.configure(hef, cfg)[0]
-        self._in_params = InputVStreamParams.make(self._network_group)
-        self._out_params = OutputVStreamParams.make(self._network_group)
-        in_info = hef.get_input_vstream_infos()[0]
-        self._input_name = in_info.name
-        # in_info.shape is (height, width, channels)
-        self._in_h, self._in_w = in_info.shape[0], in_info.shape[1]
-        self._InferVStreams = InferVStreams
+        if not self._settings.hailo_hef_path.exists():
+            log.error("Hailo HEF not found at %s", hef_path)
+            raise FileNotFoundError(f"Hailo HEF not found: {hef_path}")
+
+        try:
+            hef = HEF(hef_path)
+            self._vdevice = VDevice()
+            cfg = ConfigureParams.create_from_hef(
+                hef, interface=HailoStreamInterface.PCIe
+            )
+            self._network_group = self._vdevice.configure(hef, cfg)[0]
+            self._in_params = InputVStreamParams.make(self._network_group)
+            self._out_params = OutputVStreamParams.make(self._network_group)
+            in_info = hef.get_input_vstream_infos()[0]
+            self._input_name = in_info.name
+            # in_info.shape is (height, width, channels)
+            self._in_h, self._in_w = in_info.shape[0], in_info.shape[1]
+            self._InferVStreams = InferVStreams
+        except Exception:
+            log.exception("failed to configure Hailo device from %s", hef_path)
+            raise
+
         self._ready = True
+        log.info(
+            "Hailo backend ready (input=%r, %dx%d)",
+            self._input_name, self._in_w, self._in_h,
+        )
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         self._ensure_model()
@@ -68,7 +96,13 @@ class HailoDetector:
                 self._network_group, self._in_params, self._out_params
             ) as pipeline:
                 raw = pipeline.infer({self._input_name: batch})
-        return self._postprocess(raw, orig_w, orig_h)
+        dets = self._postprocess(raw, orig_w, orig_h)
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug(
+                "hailo infer: %d detection(s) above conf=%.2f",
+                len(dets), self._settings.detect_conf,
+            )
+        return dets
 
     def _postprocess(self, raw: dict, orig_w: int, orig_h: int) -> list[Detection]:
         # NMS-on-chip output: {output_name: [ per-class array of [y0,x0,y1,x1,score] ]}

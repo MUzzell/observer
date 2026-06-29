@@ -166,6 +166,7 @@ class WorkerService:
                 {"type": "progress", "video_id": video_id, "progress": round(p, 3)}
             )
 
+        log.info("processing video %s (id=%s) at %s", filename, video_id, working_path)
         try:
             result: ClipResult = await self._loop.run_in_executor(
                 None,
@@ -179,12 +180,23 @@ class WorkerService:
                 ),
             )
         except Exception as exc:
+            # Log the full traceback (this is where a Hailo/detector failure
+            # surfaces) — storing only str(exc) in the DB hides the cause.
+            log.exception(
+                "detector failed for video %s (id=%s, backend=%s)",
+                filename, video_id, self._settings.detector_backend,
+            )
             self._mark_error(video_id, str(exc))
             await self._bus.publish(
                 {"type": "error", "video_id": video_id, "error": str(exc)}
             )
             return
 
+        log.info(
+            "processed video %s (id=%s): has_aircraft=%s conf=%.3f hits=%d/%d",
+            filename, video_id, result.has_aircraft, result.confidence,
+            result.num_hits, result.num_frames,
+        )
         await self._persist(video_id, filename, working_path, result, finalize_move)
 
     async def _persist(

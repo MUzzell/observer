@@ -380,6 +380,12 @@ def main() -> None:
     ds.set_defaults(func=_build_dataset)
 
     args = parser.parse_args()
+
+    # Configure logging before anything runs so worker/detector logs reach
+    # stdout (→ journalctl) and the rotating file under data/logs/.
+    from observer.logging_setup import setup_logging
+
+    setup_logging(get_settings().data_dir)
     args.func(args)
 
 
