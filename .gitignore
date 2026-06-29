@@ -13,6 +13,9 @@ venv/
 .python
 *.log
 
+*.whl
+*.deb
+
 # Project data (runtime media + database)
 /data/
 /dataset/
