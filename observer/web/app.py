@@ -142,13 +142,36 @@ def dashboard(request: Request, show: str = Query("all"), month: str = Query(Non
         "cal_weeks": _build_calendar(shown_month, counts),
         "cal_month": shown_month, "cal_prev": prev_month, "cal_next": next_month,
         "cal_dow": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+        "camera_stream_url": settings.camera_stream_url,
     })
 
 
 @app.get("/clips", response_class=HTMLResponse)
 def clips_partial(request: Request, show: str = Query("all")):
+    # Returns the filter bar + timeline so an htmx swap of #content updates both
+    # the active filter and the list, without reloading the page (live cam stays).
     return templates.TemplateResponse(
-        request, "_day_groups.html", {"groups": _group_by_day(_all_clips(show))})
+        request, "_timeline.html",
+        {"groups": _group_by_day(_all_clips(show)), "show": show})
+
+
+@app.get("/calendar", response_class=HTMLResponse)
+def calendar_partial(request: Request, month: str = Query(None)):
+    # Just the calendar, for htmx month navigation — leaves the page (and the
+    # live camera stream) untouched.
+    counts = _day_counts()
+    fallback = max(counts) if counts else date.today()
+    try:
+        shown_month = datetime.strptime(month, "%Y-%m").date() if month else fallback
+    except ValueError:
+        shown_month = fallback
+    shown_month = shown_month.replace(day=1)
+    prev_month, next_month = _month_neighbours(shown_month)
+    return templates.TemplateResponse(request, "_calendar.html", {
+        "cal_weeks": _build_calendar(shown_month, counts),
+        "cal_month": shown_month, "cal_prev": prev_month, "cal_next": next_month,
+        "cal_dow": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    })
 
 
 @app.get("/clip/{clip_id}", response_class=HTMLResponse)

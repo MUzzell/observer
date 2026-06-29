@@ -1,0 +1,30 @@
+<div class="calendar">
+  <div class="cal-head">
+    <a class="cal-nav" hx-get="/calendar?month={{ cal_prev }}" hx-target="#calendar-wrap"
+       hx-swap="innerHTML" title="previous month">‹</a>
+    <span class="cal-month">{{ cal_month.strftime('%B %Y') }}</span>
+    <a class="cal-nav" hx-get="/calendar?month={{ cal_next }}" hx-target="#calendar-wrap"
+       hx-swap="innerHTML" title="next month">›</a>
+  </div>
+  <div class="cal-grid">
+    {% for d in cal_dow %}<span class="cal-dow">{{ d }}</span>{% endfor %}
+    {% for week in cal_weeks %}{% for cell in week %}
+      {% if cell.n_aircraft %}
+      <a class="cal-day event {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}"
+         href="#day-{{ cell.date.isoformat() }}"
+         title="{{ cell.n_aircraft }} aircraft ({{ cell.n_clips }} clip{{ 's' if cell.n_clips != 1 }})">
+        {{ cell.date.day }}<span class="cal-count">{{ cell.n_aircraft }}</span>
+      </a>
+      {% elif cell.n_clips %}
+      <a class="cal-day has-clips {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}"
+         href="#day-{{ cell.date.isoformat() }}"
+         title="{{ cell.n_clips }} clip{{ 's' if cell.n_clips != 1 }}, no detections">
+        {{ cell.date.day }}
+      </a>
+      {% else %}
+      <span class="cal-day {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}">{{ cell.date.day }}</span>
+      {% endif %}
+    {% endfor %}{% endfor %}
+  </div>
+  <div class="cal-legend"><span class="cal-swatch"></span> aircraft</div>
+</div>

@@ -2,48 +2,25 @@
 {% block content %}
 <section class="layout">
   <div class="main-col">
-    {% set m = '&month=' ~ cal_month.strftime('%Y-%m') %}
-    <div class="page-head">
-      <h1 class="page-title">Events</h1>
-      <div class="filter">
-        <a class="{{ 'on' if show == 'all' }}" href="/?show=all{{ m }}">All</a>
-        <a class="{{ 'on' if show == 'aircraft' }}" href="/?show=aircraft{{ m }}">Aircraft</a>
-        <a class="{{ 'on' if show == 'none' }}" href="/?show=none{{ m }}">No aircraft</a>
-      </div>
-    </div>
     <div id="content">
-      {% include "_day_groups.html" %}
+      {% include "_timeline.html" %}
     </div>
   </div>
 
   <aside class="side-col">
-    <div class="calendar">
-      <div class="cal-head">
-        <a class="cal-nav" href="/?show={{ show }}&month={{ cal_prev }}" title="previous month">‹</a>
-        <span class="cal-month">{{ cal_month.strftime('%B %Y') }}</span>
-        <a class="cal-nav" href="/?show={{ show }}&month={{ cal_next }}" title="next month">›</a>
-      </div>
-      <div class="cal-grid">
-        {% for d in cal_dow %}<span class="cal-dow">{{ d }}</span>{% endfor %}
-        {% for week in cal_weeks %}{% for cell in week %}
-          {% if cell.n_aircraft %}
-          <a class="cal-day event {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}"
-             href="#day-{{ cell.date.isoformat() }}"
-             title="{{ cell.n_aircraft }} aircraft ({{ cell.n_clips }} clip{{ 's' if cell.n_clips != 1 }})">
-            {{ cell.date.day }}<span class="cal-count">{{ cell.n_aircraft }}</span>
-          </a>
-          {% elif cell.n_clips %}
-          <a class="cal-day has-clips {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}"
-             href="#day-{{ cell.date.isoformat() }}"
-             title="{{ cell.n_clips }} clip{{ 's' if cell.n_clips != 1 }}, no detections">
-            {{ cell.date.day }}
-          </a>
-          {% else %}
-          <span class="cal-day {{ 'out' if not cell.in_month }} {{ 'today' if cell.today }}">{{ cell.date.day }}</span>
-          {% endif %}
-        {% endfor %}{% endfor %}
-      </div>
-      <div class="cal-legend"><span class="cal-swatch"></span> aircraft</div>
+    {% if camera_stream_url %}
+    <div class="live-cam">
+      <div class="live-cam-head"><span class="live-dot"></span> Live camera</div>
+      <a href="{{ camera_stream_url }}" target="_blank" rel="noopener" title="open full stream">
+        <img class="cam-stream" src="{{ camera_stream_url }}" alt="live camera"
+             onerror="this.classList.add('cam-broken'); this.nextElementSibling.style.display='flex';" />
+        <div class="cam-offline">camera offline</div>
+      </a>
+    </div>
+    {% endif %}
+
+    <div id="calendar-wrap">
+      {% include "_calendar.html" %}
     </div>
 
     <h2>Live activity</h2>

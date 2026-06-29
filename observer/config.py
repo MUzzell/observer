@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     # --- Web --------------------------------------------------------------
     host: str = "0.0.0.0"
     port: int = 8000
+    # Live camera MJPEG stream, embedded as an <img> source. Empty to hide it.
+    camera_stream_url: str = "http://172.16.50.10:8081/"
 
     # --- Derived media directories ---------------------------------------
     @property

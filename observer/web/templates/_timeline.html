@@ -1,0 +1,12 @@
+<div class="page-head">
+  <h1 class="page-title">Events</h1>
+  <div class="filter">
+    <a class="{{ 'on' if show == 'all' }}" hx-get="/clips?show=all"
+       hx-target="#content" hx-swap="innerHTML" hx-push-url="/?show=all">All</a>
+    <a class="{{ 'on' if show == 'aircraft' }}" hx-get="/clips?show=aircraft"
+       hx-target="#content" hx-swap="innerHTML" hx-push-url="/?show=aircraft">Aircraft</a>
+    <a class="{{ 'on' if show == 'none' }}" hx-get="/clips?show=none"
+       hx-target="#content" hx-swap="innerHTML" hx-push-url="/?show=none">No aircraft</a>
+  </div>
+</div>
+{% include "_day_groups.html" %}
