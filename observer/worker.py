@@ -30,7 +30,9 @@ class WorkerService:
     def __init__(self, bus: EventBus, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
         self._bus = bus
-        self._queue: asyncio.Queue[Path] = asyncio.Queue()
+        # A queued ``Path`` is a freshly-arrived clip; a queued ``int`` is an
+        # existing clip id to reprocess in place (reusing its DB row).
+        self._queue: asyncio.Queue[Path | int] = asyncio.Queue()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._watcher: IngestWatcher | None = None
         self._consumer_task: asyncio.Task | None = None
@@ -61,13 +63,22 @@ class WorkerService:
         if self._loop:
             self._loop.call_soon_threadsafe(self._queue.put_nowait, path)
 
+    def enqueue_reprocess(self, video_id: int) -> None:
+        """Queue an existing clip (by id) to be processed again. Safe to call
+        from any thread (the web layer runs sync endpoints off the loop)."""
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, video_id)
+
     async def _consume(self) -> None:
         while True:
-            path = await self._queue.get()
+            item = await self._queue.get()
             try:
-                await self._process_one(path)
+                if isinstance(item, Path):
+                    await self._process_one(item)
+                else:
+                    await self._reprocess(item)
             except Exception:
-                log.exception("processing failed for %s", path)
+                log.exception("processing failed for %s", item)
             finally:
                 self._queue.task_done()
 
@@ -86,7 +97,63 @@ class WorkerService:
         await self._bus.publish(
             {"type": "video_received", "video_id": video_id, "filename": path.name}
         )
+        await self._run(video_id, path.name, working_path)
 
+    async def _reprocess(self, video_id: int) -> None:
+        """Re-run the pipeline for an existing clip, whatever state it's in."""
+        with get_session() as session:
+            video = session.get(Video, video_id)
+            if video is None:
+                return
+            filename = video.filename
+            source_path = video.source_path
+            # Reset to a clean processing state; keep the human label (ground
+            # truth) and source_path, drop the detector verdict.
+            video.status = VideoStatus.processing
+            video.progress = 0.0
+            video.error = None
+            video.processed_at = None
+            video.has_aircraft = False
+            video.confidence = 0.0
+            video.num_hits = 0
+            video.num_frames = 0
+            video.aircraft_type = None
+            video.best_time_s = 0.0
+            video.audio_has_aircraft = False
+            video.audio_confidence = 0.0
+            session.add(video)
+            session.commit()
+
+        path = files.locate_clip(filename, source_path)
+        if path is None:
+            self._mark_error(video_id, "clip file not found for reprocessing")
+            await self._bus.publish(
+                {"type": "error", "video_id": video_id,
+                 "error": "clip file not found for reprocessing"}
+            )
+            return
+
+        # Pull a pipeline clip back into processing/; leave an imported source
+        # clip where it lives (and don't move it to processed/ afterwards).
+        in_pipeline = path.parent in (
+            self._settings.incoming_dir, self._settings.processed_dir,
+            self._settings.processing_dir,
+        )
+        if path.parent in (self._settings.incoming_dir, self._settings.processed_dir):
+            working_path = files.move_to_processing(path)
+        else:
+            working_path = path
+        await self._bus.publish(
+            {"type": "video_received", "video_id": video_id, "filename": filename}
+        )
+        await self._run(video_id, filename, working_path, finalize_move=in_pipeline)
+
+    async def _run(
+        self, video_id: int, filename: str, working_path: Path,
+        finalize_move: bool = True,
+    ) -> None:
+        """Run the detector on ``working_path`` and persist the verdict to the
+        existing ``video_id`` row."""
         last_emit = 0.0
 
         def on_progress(p: float) -> None:
@@ -118,10 +185,11 @@ class WorkerService:
             )
             return
 
-        await self._persist(video_id, path.name, working_path, result)
+        await self._persist(video_id, filename, working_path, result, finalize_move)
 
     async def _persist(
-        self, video_id: int, filename: str, working_path: Path, result: ClipResult
+        self, video_id: int, filename: str, working_path: Path, result: ClipResult,
+        finalize_move: bool = True,
     ) -> None:
         with get_session() as session:
             video = session.get(Video, video_id)
@@ -142,7 +210,8 @@ class WorkerService:
                 session.add(video)
                 session.commit()
 
-        files.move_to_processed(working_path)
+        if finalize_move:
+            files.move_to_processed(working_path)
         await self._bus.publish(
             {
                 "type": "done",

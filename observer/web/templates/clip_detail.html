@@ -24,6 +24,19 @@
 
   {% include "_label_box.html" %}
 
+  <div class="clip-controls">
+    <button class="ctl-btn"
+            hx-post="/clip/{{ clip.id }}/reprocess"
+            hx-confirm="Reprocess this clip? Its detector verdict will be recomputed.">
+      ↻ Reprocess
+    </button>
+    <button class="ctl-btn danger"
+            hx-post="/clip/{{ clip.id }}/clear"
+            hx-confirm="Remove this clip from the database? The files on disk are left as-is.">
+      🗑 Clear
+    </button>
+  </div>
+
   <div class="detail-grid">
     <div class="player">
       {% if clip.status.value in ("pending", "processing") %}

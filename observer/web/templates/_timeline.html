@@ -1,5 +1,12 @@
 <div class="page-head">
   <h1 class="page-title">Events</h1>
+  {% if stats %}
+  <div class="stats" title="aircraft days · aircraft clips · total clips">
+    <span class="stat"><b>{{ stats.aircraft_days }}</b> day{{ 's' if stats.aircraft_days != 1 }} with aircraft</span>
+    <span class="stat"><b>{{ stats.total_aircraft }}</b> aircraft clip{{ 's' if stats.total_aircraft != 1 }}</span>
+    <span class="stat"><b>{{ stats.total_clips }}</b> total clip{{ 's' if stats.total_clips != 1 }}</span>
+  </div>
+  {% endif %}
   <div class="filter">
     <a class="{{ 'on' if show == 'all' }}" hx-get="/clips?show=all"
        hx-target="#content" hx-swap="innerHTML" hx-push-url="/?show=all">All</a>

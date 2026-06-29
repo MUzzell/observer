@@ -108,6 +108,16 @@ def _day_counts() -> dict[date, dict]:
     return counts
 
 
+def _stats(counts: dict[date, dict]) -> dict:
+    """Headline totals for the dashboard header: total clips, aircraft clips,
+    and the number of distinct days that have at least one aircraft clip."""
+    return {
+        "total_clips": sum(c["n_clips"] for c in counts.values()),
+        "total_aircraft": sum(c["n_aircraft"] for c in counts.values()),
+        "aircraft_days": sum(1 for c in counts.values() if c["n_aircraft"]),
+    }
+
+
 def _month_neighbours(first: date) -> tuple[str, str]:
     prev = (first - timedelta(days=1)).replace(day=1)
     nxt = (first + timedelta(days=31)).replace(day=1)
@@ -146,6 +156,7 @@ def dashboard(request: Request, show: str = Query("all"), month: str = Query(Non
     prev_month, next_month = _month_neighbours(shown_month)
     return templates.TemplateResponse(request, "index.html", {
         "groups": _group_by_day(_all_clips(show)), "show": show,
+        "stats": _stats(counts),
         "cal_weeks": _build_calendar(shown_month, counts),
         "cal_month": shown_month, "cal_prev": prev_month, "cal_next": next_month,
         "cal_dow": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
@@ -159,7 +170,8 @@ def clips_partial(request: Request, show: str = Query("all")):
     # the active filter and the list, without reloading the page (live cam stays).
     return templates.TemplateResponse(
         request, "_timeline.html",
-        {"groups": _group_by_day(_all_clips(show)), "show": show})
+        {"groups": _group_by_day(_all_clips(show)), "show": show,
+         "stats": _stats(_day_counts())})
 
 
 @app.get("/calendar", response_class=HTMLResponse)
@@ -222,6 +234,32 @@ def set_label(request: Request, clip_id: int, value: str = Form(...)):
         session.commit()
         session.refresh(clip)
         return templates.TemplateResponse(request, "_label_box.html", {"clip": clip})
+
+
+@app.post("/clip/{clip_id}/clear")
+def clear_clip(clip_id: int):
+    """Remove a clip's DB row. The media files on disk are left untouched, so a
+    matching clip dropped into ``incoming/`` again would be ingested afresh."""
+    with get_session() as session:
+        clip = session.get(Video, clip_id)
+        if clip is None:
+            return Response(status_code=404)
+        session.delete(clip)
+        session.commit()
+    # The detail page is gone now; send htmx back to the dashboard.
+    return Response(status_code=200, headers={"HX-Redirect": "/"})
+
+
+@app.post("/clip/{clip_id}/reprocess")
+def reprocess_clip(request: Request, clip_id: int):
+    """Reset a clip's processing state and re-run the detector, whatever state
+    it's currently in. The DB row is reused (its verdict is recomputed)."""
+    with get_session() as session:
+        clip = session.get(Video, clip_id)
+        if clip is None:
+            return Response(status_code=404)
+    request.app.state.worker.enqueue_reprocess(clip_id)
+    return Response(status_code=200, headers={"HX-Redirect": f"/clip/{clip_id}"})
 
 
 @app.get("/media/{path:path}")
