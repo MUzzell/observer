@@ -31,6 +31,7 @@ class HailoDetector:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._ready = False
+        self._logged_shape = False
 
     def _ensure_model(self) -> None:
         if self._ready:
@@ -89,7 +90,9 @@ class HailoDetector:
         orig_h, orig_w = frame.shape[:2]
         resized = cv2.resize(frame, (self._in_w, self._in_h))
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        batch = np.expand_dims(rgb, 0).astype(np.float32)
+        # The HEF's input stream is uint8 (normalisation happens on-chip); feed
+        # uint8 directly to avoid a per-frame float32->uint8 conversion.
+        batch = np.expand_dims(rgb, 0).astype(np.uint8)
 
         with self._network_group.activate():
             with self._InferVStreams(
@@ -105,27 +108,74 @@ class HailoDetector:
         return dets
 
     def _postprocess(self, raw: dict, orig_w: int, orig_h: int) -> list[Detection]:
-        # NMS-on-chip output: {output_name: [ per-class array of [y0,x0,y1,x1,score] ]}
+        # NMS-on-chip output: per-class arrays of [y0, x0, y1, x1, score] rows,
+        # but the exact nesting (batch / class wrapping, object vs float arrays)
+        # varies by HailoRT version and HEF. Log the real structure once so it's
+        # verifiable from the journal, then walk it depth-first collecting any
+        # 5-wide rows — robust to the wrapping, and single-class here so we don't
+        # need to preserve which class a row came from.
+        if not self._logged_shape:
+            self._logged_shape = True
+            log.info(
+                "hailo raw output structure: %s",
+                {k: _describe(v) for k, v in raw.items()},
+            )
+
         detections = next(iter(raw.values()))
-        # Batch dimension if present.
-        if isinstance(detections, np.ndarray) and detections.ndim and len(detections):
-            detections = detections[0]
         out: list[Detection] = []
-        for class_dets in detections:  # one entry per class; we have a single class
-            if class_dets is None or len(class_dets) == 0:
+        for box in _iter_boxes(detections):
+            if len(box) < 5:
                 continue
-            for det in class_dets:
-                y0, x0, y1, x1, score = det[:5]
-                if score < self._settings.detect_conf:
-                    continue
-                out.append(
-                    Detection(
-                        xyxy=(x0 * orig_w, y0 * orig_h, x1 * orig_w, y1 * orig_h),
-                        label="aircraft",
-                        confidence=float(score),
-                    )
+            y0, x0, y1, x1, score = (float(v) for v in box[:5])
+            if score < self._settings.detect_conf:
+                continue
+            out.append(
+                Detection(
+                    xyxy=(x0 * orig_w, y0 * orig_h, x1 * orig_w, y1 * orig_h),
+                    label="aircraft",
+                    confidence=score,
                 )
+            )
         return out
 
     def classify_type(self, frame: np.ndarray) -> tuple[str | None, float]:
         return None, 0.0
+
+
+_NUMERIC = (int, float, np.floating, np.integer)
+
+
+def _iter_boxes(node):
+    """Yield every ``[y0, x0, y1, x1, score, ...]`` detection row found anywhere
+    in the (variably nested) NMS output, skipping empty class entries."""
+    if isinstance(node, np.ndarray):
+        if node.dtype == object:
+            for el in node:
+                yield from _iter_boxes(el)
+        elif node.ndim >= 2 and node.shape[-1] >= 5:
+            for row in node.reshape(-1, node.shape[-1]):
+                yield row
+        elif node.ndim == 1 and node.shape[0] >= 5:
+            yield node
+        elif node.ndim >= 1:
+            for el in node:
+                yield from _iter_boxes(el)
+        return
+    if isinstance(node, (list, tuple)):
+        if len(node) >= 5 and all(isinstance(v, _NUMERIC) for v in node[:5]):
+            yield node
+        else:
+            for el in node:
+                yield from _iter_boxes(el)
+
+
+def _describe(node, depth: int = 0) -> str:
+    """Compact, recursive description of an inference-output node for logging."""
+    if depth > 4:
+        return "..."
+    if isinstance(node, np.ndarray):
+        return f"ndarray(shape={node.shape}, dtype={node.dtype})"
+    if isinstance(node, (list, tuple)):
+        head = _describe(node[0], depth + 1) if node else "empty"
+        return f"{type(node).__name__}(len={len(node)}, [0]={head})"
+    return type(node).__name__
