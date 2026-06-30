@@ -307,11 +307,24 @@ def main() -> int:
             audio = None
 
     picam2 = Picamera2()
-    picam2.configure(picam2.create_video_configuration(
-        main={"size": args.main_size},
-        lores={"size": args.lores_size, "format": "YUV420"},
-        controls={"FrameRate": args.fps},
-    ))
+    # The Pi HQ (CSI) camera's ISP yields main + lores simultaneously, so motion detection
+    # runs on the tiny hardware luma plane for free. USB/UVC webcams expose only a single
+    # stream — libcamera returns no config for the dual-stream request — so fall back to one
+    # stream and downscale the main frame in software for motion sensing.
+    use_lores = True
+    try:
+        picam2.configure(picam2.create_video_configuration(
+            main={"size": args.main_size},
+            lores={"size": args.lores_size, "format": "YUV420"},
+            controls={"FrameRate": args.fps},
+        ))
+    except Exception as exc:
+        use_lores = False
+        print(f"single-stream camera ({exc}); motion via software downscale", file=sys.stderr, flush=True)
+        picam2.configure(picam2.create_video_configuration(
+            main={"size": args.main_size},
+            controls={"FrameRate": args.fps},
+        ))
 
     # Burn an ISO-8601 timestamp onto the main stream every frame, BEFORE encoding — so it
     # lands in both the recordings and the live preview (both read the main stream). Drawn
@@ -379,7 +392,8 @@ def main() -> int:
         pipeline_live.clear()                # resume pushing the "camera offline" placeholder
 
     window = "always" if args.active is None else f"{args.active[0]:%H:%M}-{args.active[1]:%H:%M}"
-    print(f"watching for motion (main={args.main_size}, lores={args.lores_size}, "
+    motion_src = f"lores={args.lores_size}" if use_lores else f"downscale={args.lores_size}"
+    print(f"watching for motion (main={args.main_size}, {motion_src}, "
           f"audio={'off' if audio is None else args.mic}, record window={window})…", flush=True)
     try:
         while not _stop:
@@ -393,8 +407,15 @@ def main() -> int:
                 print("  inside record window — capturing", flush=True)
                 start_pipeline()
 
-            # lores luma (Y) plane = top lh rows of the YUV420 array — cheap to diff
-            y = picam2.capture_array("lores")[:lh, :lw].astype(np.int16)
+            if use_lores:
+                # lores luma (Y) plane = top lh rows of the YUV420 array — cheap to diff
+                y = picam2.capture_array("lores")[:lh, :lw].astype(np.int16)
+            else:
+                # single-stream camera: downscale the main frame and reduce to luma in software
+                small = cv2.resize(picam2.capture_array("main"), (lw, lh))
+                if small.ndim == 3:
+                    small = small[..., :3].mean(axis=2)
+                y = small.astype(np.int16)
             if prev is not None:
                 mse = float(np.mean((y - prev) ** 2))
                 now = time.time()
