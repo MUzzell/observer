@@ -19,6 +19,8 @@ venv/
 # Project data (runtime media + database)
 /data/
 /dataset/
+/runs/
+/weights/
 *.db
 *.sqlite3
 

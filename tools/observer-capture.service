@@ -1,0 +1,36 @@
+# Observer camera-Pi motion capture (picamera2) — replaces the `motion` daemon.
+#
+# Install on the camera Pi:
+#   sudo apt install -y python3-picamera2 python3-alsaaudio python3-opencv
+#   sudo systemctl disable --now motion           # stop the old daemon
+#   sudo cp tools/observer-capture.service /etc/systemd/system/
+#   # edit paths/--mic/--main-size below to match your setup, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now observer-capture
+#   journalctl -u observer-capture -f             # watch it
+#
+# Uses the system python3 on purpose: python3-picamera2 is an apt package and is not
+# visible inside a plain venv.
+
+[Unit]
+Description=Observer camera-Pi motion capture (picamera2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Let the camera + USB mic enumerate before we grab them.
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/python3 /home/pi/observer/tools/pi_capture.py \
+    --out /home/pi/clips \
+    --main-size 1280x720 \
+    --mic hw:1,0 \
+    --active 08:00-18:00
+Restart=always
+RestartSec=3
+# A capture process shouldn't hoard memory; restart it if it ever balloons.
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
